@@ -1,1724 +1,1301 @@
 # Kitron
 
-> **A cross-platform desktop runtime for JavaScript and TypeScript, powered by Node.js, native WebViews and a minimal Rust bridge.**
+## React Native + Node.js + Rust Desktop Runtime
 
-## 1. Vision
+Kitron est un runtime desktop cross-platform destiné à créer des applications desktop modernes avec :
 
-Kitron est une alternative moderne à Electron pour créer des applications desktop avec les technologies web.
+- React Native pour l'interface utilisateur
+- TypeScript/JavaScript pour toute la logique applicative
+- Node.js pour les capacités backend/runtime JavaScript
+- Rust pour la couche native cross-platform
+- APIs natives macOS et Windows
 
-Kitron doit permettre de développer une application desktop principalement en :
-
-- TypeScript
-- JavaScript
-- React
-- TanStack Start
-- HTML
-- CSS
-- Node.js
-
-sans demander au développeur d'écrire du code natif.
-
-L'objectif architectural est :
-
-```text
-Electron
-
-JavaScript / TypeScript
-        │
-        ▼
-     Node.js
-        │
-        ▼
-    Chromium
-```
-
-contre :
-
-```text
-Kitron
-
-JavaScript / TypeScript
-        │
-        ├──────────────────────┐
-        ▼                      ▼
-    Node.js                Rust Bridge
-        │                      │
-        │                      ▼
-        │                 Native APIs
-        │                      │
-        │                 Native WebView
-        │
-        └──────────── IPC ─────┘
-```
-
-Kitron ne doit **pas embarquer Chromium**.
+L'objectif est de proposer une alternative à Electron qui n'utilise pas Chromium.
 
 ---
 
-# 2. Objectifs
+# 1. Vision
 
-Kitron doit être :
-
-- multiplateforme
-- TypeScript-first
-- Node.js-first
-- Web-standard
-- léger
-- performant
-- sécurisé
-- extensible
-- simple à utiliser
-- proche d'Electron dans son expérience développeur
-
-Les plateformes cibles sont :
+Kitron doit permettre de construire une application desktop avec une expérience de développement proche de :
 
 ```text
-macOS
+React Native
++
+TypeScript
++
+Node.js
+```
+
+tout en donnant accès aux fonctionnalités natives de l'ordinateur :
+
+```text
 Windows
-Linux
+macOS
 ```
 
----
-
-# 3. Architecture fondamentale
-
-Architecture globale :
+Architecture générale :
 
 ```text
-┌─────────────────────────────────────────────────────┐
-│                    KITRON APP                       │
-│                                                     │
-│  ┌───────────────────────────────────────────────┐  │
-│  │           TanStack Start + Vite               │  │
-│  │                                               │  │
-│  │             React / TypeScript                │  │
-│  │                                               │  │
-│  │              Web Application                  │  │
-│  └───────────────────────┬───────────────────────┘  │
-│                          │                          │
-│                     Kitron API                     │
-│                          │                          │
-│             ┌────────────┴────────────┐             │
-│             │                         │             │
-│             ▼                         ▼             │
-│        Node.js Runtime          Rust Bridge         │
-│             │                         │             │
-│             │                  Native OS APIs       │
-│             │                         │             │
-│             │                         ▼             │
-│             │                  Native WebView       │
-│             │                                      │
-│             └──────────── IPC ─────────────────────┘
-└─────────────────────────────────────────────────────┘
+┌───────────────────────────────────────────┐
+│                KITRON APP                 │
+│                                           │
+│       React Native + TypeScript           │
+│                                           │
+└─────────────────────┬─────────────────────┘
+                      │
+                Native Bridge
+                      │
+                      ▼
+             ┌────────────────┐
+             │   Rust Core    │
+             │                │
+             │ Native Runtime │
+             └───────┬────────┘
+                     │
+          ┌──────────┴──────────┐
+          │                     │
+       macOS                 Windows
+      Native APIs           Native APIs
+```
+
+Node.js est intégré au runtime :
+
+```text
+                    Kitron
+                      │
+          ┌───────────┴───────────┐
+          │                       │
+    React Native               Node.js
+          │                       │
+          └──────────┬────────────┘
+                     │
+                Rust Core
+                     │
+              Native OS APIs
 ```
 
 ---
 
-# 4. Responsabilités des couches
+# 2. Objectif principal
 
-## 4.1 Frontend
+Le développeur d'une application Kitron doit écrire principalement :
 
-Le frontend est responsable de :
+```text
+TypeScript
+TSX
+JavaScript
+```
+
+Il ne doit pas avoir besoin d'écrire :
+
+```text
+Rust
+Swift
+Objective-C
+C++
+Win32
+WinRT
+```
+
+La complexité native doit être encapsulée dans Kitron.
+
+---
+
+# 3. Philosophie d'architecture
+
+Kitron ne doit PAS devenir un framework frontend.
+
+Ne pas intégrer :
+
+- Vite
+- TanStack
+- Next.js
+- Chromium
+- Electron
+- un framework web
+- HTML/CSS comme renderer principal
+
+React Native est le renderer.
+
+Kitron est le runtime desktop.
+
+---
+
+# 4. Responsabilités des composants
+
+## 4.1 React Native
+
+React Native est responsable de :
 
 - UI
-- routing
-- état de l'application
-- interactions utilisateur
 - rendu
-- logique frontend
-- appels vers Kitron
+- composants
+- animations
+- gestures
+- interactions utilisateur
+- état UI
+- navigation
+- accessibilité
 
-Stack par défaut :
+Exemple :
 
-```text
-TanStack Start
-React
-TypeScript
-Vite
+```tsx
+export function App() {
+  return (
+    <View>
+      <Text>Hello Kitron</Text>
+    </View>
+  );
+}
+```
+
+React Native doit utiliser son moteur de rendu natif.
+
+Ne pas créer un renderer HTML.
+
+---
+
+# 5. TypeScript / JavaScript
+
+TypeScript est le langage principal utilisé par les développeurs.
+
+Il doit être utilisé pour :
+
+- logique applicative
+- services
+- état
+- API
+- communication avec le backend local
+- gestion des fichiers lorsque Node peut le faire
+- logique métier
+- plugins
+
+Exemple :
+
+```ts
+import { window } from "@kitron/window";
+
+const mainWindow = await window.create({
+  width: 1200,
+  height: 800,
+});
 ```
 
 ---
 
-## 4.2 Node.js
+# 6. Node.js
 
-Node.js est le runtime backend principal.
+Node.js doit être embarqué dans Kitron.
 
-Il doit être utilisé pour toutes les fonctionnalités que Node.js sait déjà gérer.
+Node sert notamment à fournir :
+
+- npm
+- filesystem
+- HTTP
+- WebSocket
+- TCP
+- processus
+- workers
+- crypto
+- streams
+- TypeScript runtime si nécessaire
+- bibliothèques Node existantes
+
+Exemples :
+
+```ts
+import fs from "node:fs/promises";
+
+const files = await fs.readdir("./data");
+```
+
+ou :
+
+```ts
+import { spawn } from "node:child_process";
+
+spawn("git", ["status"]);
+```
+
+Ne pas réimplémenter en Rust des fonctionnalités que Node fournit déjà correctement.
+
+---
+
+# 7. Rust
+
+Rust est le cœur natif de Kitron.
+
+Rust doit être utilisé lorsque JavaScript/Node/React Native doivent communiquer avec le système d'exploitation.
+
+Rust doit notamment gérer :
+
+- création de fenêtres
+- gestion des fenêtres
+- menus natifs
+- tray
+- notifications natives
+- dialogs natifs
+- raccourcis globaux
+- deep links
+- file associations
+- intégration OS
+- permissions natives
+- lifecycle de l'application
+- processus natifs lorsque nécessaire
+- auto-update
+- communication avec les APIs natives
+- fonctionnalités cross-platform difficiles à abstraire en JS
+
+Rust ne doit PAS contenir la logique métier de l'application.
+
+---
+
+# 8. Bridge JavaScript ↔ Rust
+
+Le bridge est un composant central de Kitron.
+
+Architecture :
+
+```text
+React Native
+     │
+     ▼
+JavaScript / TypeScript
+     │
+     ▼
+JSI / Native Module
+     │
+     ▼
+Rust
+     │
+     ▼
+Native OS
+```
+
+Éviter autant que possible un bridge JSON lent pour les opérations fréquentes.
+
+Privilégier :
+
+```text
+JSI
+Native Modules
+Typed APIs
+Async primitives
+```
+
+pour les appels haute fréquence.
+
+---
+
+# 9. API Kitron
+
+L'API publique doit être simple et TypeScript-first.
+
+Exemple :
+
+```ts
+import {
+  app,
+  window,
+  dialog,
+  clipboard,
+  notification,
+  shell,
+  process,
+} from "kitron";
+```
+
+---
+
+# 10. Window API
+
+Exemple :
+
+```ts
+const mainWindow = await window.create({
+  width: 1200,
+  height: 800,
+  title: "My App",
+});
+```
+
+API minimale :
+
+```ts
+window.create()
+window.get()
+window.close()
+window.minimize()
+window.maximize()
+window.restore()
+window.focus()
+window.setSize()
+window.setPosition()
+window.show()
+window.hide()
+```
+
+Supporter plusieurs fenêtres.
+
+---
+
+# 11. Application lifecycle
+
+API :
+
+```ts
+app.ready()
+
+app.quit()
+
+app.hide()
+
+app.show()
+
+app.on("ready")
+
+app.on("activate")
+
+app.on("beforeQuit")
+
+app.on("quit")
+```
+
+L'implémentation native doit gérer correctement le lifecycle différent de macOS et Windows.
+
+---
+
+# 12. Native dialogs
+
+API :
+
+```ts
+const result = await dialog.openFile({
+  multiple: true,
+});
+```
+
+Supporter :
+
+```text
+Open file
+Save file
+Select directory
+Message
+Confirmation
+Error
+```
+
+Les dialogs doivent utiliser les dialogs natifs de l'OS.
+
+---
+
+# 13. Clipboard
+
+API :
+
+```ts
+await clipboard.writeText("Hello");
+
+const text = await clipboard.readText();
+```
+
+Prévoir ultérieurement :
+
+```text
+text
+HTML
+image
+files
+```
+
+---
+
+# 14. Notifications
+
+API :
+
+```ts
+await notification.show({
+  title: "Build complete",
+  body: "Your application is ready.",
+});
+```
+
+Utiliser les APIs natives :
+
+```text
+macOS → UserNotifications
+Windows → Windows notifications
+```
+
+---
+
+# 15. Shell
+
+API :
+
+```ts
+await shell.openExternal("https://example.com");
+```
+
+Autres fonctionnalités possibles :
+
+```ts
+shell.openPath()
+shell.showItemInFolder()
+```
+
+---
+
+# 16. Process management
+
+Node doit être utilisé lorsque possible.
+
+Exemple :
+
+```ts
+import { spawn } from "node:child_process";
+
+const process = spawn("git", ["status"]);
+```
+
+Kitron peut néanmoins fournir une abstraction native lorsque Node n'est pas suffisant :
+
+```ts
+import { process } from "@kitron/process";
+
+const child = await process.spawn({
+  command: "git",
+  args: ["status"],
+});
+```
+
+L'API doit rester asynchrone.
+
+---
+
+# 17. Tray
+
+API :
+
+```ts
+const tray = await tray.create({
+  icon: "./icon.png",
+  tooltip: "My App",
+});
+```
+
+Supporter :
+
+```text
+Tray icon
+Context menu
+Click
+Double click
+Show/hide window
+Quit
+```
+
+---
+
+# 18. Menus
+
+API :
+
+```ts
+const menu = await Menu.create([
+  {
+    label: "File",
+    items: [
+      {
+        label: "New",
+        action: "new-file",
+      },
+    ],
+  },
+]);
+```
+
+Les menus doivent être natifs.
+
+---
+
+# 19. Global shortcuts
+
+API :
+
+```ts
+shortcut.register(
+  "CommandOrControl+Shift+K",
+  () => {
+    // ...
+  }
+);
+```
+
+Rust doit gérer l'enregistrement natif du raccourci.
+
+---
+
+# 20. Deep links
+
+Kitron doit permettre :
+
+```text
+myapp://open/project/123
+```
+
+L'application doit pouvoir recevoir le lien :
+
+```ts
+app.on("deepLink", (url) => {
+  console.log(url);
+});
+```
+
+---
+
+# 21. File associations
+
+Permettre à une application de déclarer :
+
+```text
+.md
+.json
+.myapp
+```
+
+et recevoir les fichiers ouverts par l'utilisateur.
+
+Exemple :
+
+```ts
+app.on("fileOpen", (file) => {
+  console.log(file.path);
+});
+```
+
+---
+
+# 22. Auto update
+
+Kitron doit prévoir un système d'update natif.
+
+Architecture :
+
+```text
+Application
+    │
+    ▼
+Kitron updater
+    │
+    ▼
+Check update
+    │
+    ▼
+Download
+    │
+    ▼
+Verify signature
+    │
+    ▼
+Install
+    │
+    ▼
+Restart
+```
+
+Les mises à jour doivent être cryptographiquement vérifiées.
+
+---
+
+# 23. Sécurité
+
+Ne jamais donner automatiquement à une application toutes les permissions natives.
+
+Les APIs sensibles doivent être explicites.
 
 Exemples :
 
 ```text
 Filesystem
-Networking
-HTTP
-TCP
-UDP
-Crypto
-Streams
-Child processes
-File watching
-Environment variables
-Process management
-npm packages
-Databases
-CLI tools
-```
-
-Règle fondamentale :
-
-> **Si Node.js peut faire correctement quelque chose, Kitron doit utiliser Node.js plutôt que Rust.**
-
-Exemple :
-
-```ts
-import fs from "node:fs/promises";
-
-const content = await fs.readFile(
-  "./notes.md",
-  "utf8"
-);
-```
-
-Rust n'intervient pas.
-
----
-
-# 5. Rust Bridge
-
-Rust est une couche native minimale.
-
-Rust ne doit pas devenir le backend de Kitron.
-
-Rust sert uniquement à :
-
-1. créer et gérer les fenêtres natives
-2. créer et gérer les WebViews
-3. accéder aux APIs natives du système
-4. gérer certaines fonctionnalités desktop
-5. transporter les messages IPC
-6. faire le lien entre Node.js et le système d'exploitation
-
-Exemples :
-
-```text
-Native Window
-Native WebView
-Native Menu
-System Tray
+Shell
+Process
+Network
+Camera
+Microphone
 Notifications
-Global Shortcuts
-Native Dialogs
-Screen Management
-Window Management
-OS Permissions
-Clipboard integration
-Drag & Drop
-Power Management
 ```
+
+Éviter une API du type :
+
+```ts
+native.executeAnything()
+```
+
+qui contournerait toute abstraction de sécurité.
 
 ---
 
-# 6. Principe Native Bridge
+# 24. Architecture des packages
 
-Le développeur ne doit jamais avoir besoin d'écrire directement du code natif.
+Proposer une structure :
+
+```text
+@kitron/core
+@kitron/window
+@kitron/dialog
+@kitron/menu
+@kitron/tray
+@kitron/clipboard
+@kitron/notification
+@kitron/process
+@kitron/shell
+@kitron/shortcut
+@kitron/updater
+```
+
+Un package doit exposer une API TypeScript.
 
 Exemple :
 
-```ts
-await native.notification.show({
-  title: "Kitron",
-  body: "Build completed",
-});
-```
-
-Flux :
-
 ```text
-TypeScript
-    │
-    ▼
-Kitron API
-    │
-    ▼
-IPC
-    │
-    ▼
+@kitron/window
+       │
+       ▼
+TypeScript API
+       │
+       ▼
+JSI / Native Module
+       │
+       ▼
 Rust
-    │
-    ▼
-Native OS API
-```
-
----
-
-# 7. Plateformes natives
-
-Kitron doit utiliser les WebViews natives de chaque système.
-
-## macOS
-
-```text
-Rust
-  ↓
-WKWebView
-  ↓
-WebKit
-```
-
-Les APIs macOS doivent être accessibles via Rust bindings vers les frameworks Apple lorsque nécessaire.
-
-Exemples :
-
-```text
-AppKit
-Foundation
-WebKit
-UserNotifications
-CoreGraphics
-```
-
----
-
-## Windows
-
-```text
-Rust
-  ↓
-WebView2
-  ↓
-Microsoft Edge WebView2 Runtime
-```
-
-Kitron ne doit pas embarquer une seconde version de Chromium.
-
-WebView2 doit être utilisé comme composant fourni par l'environnement Windows.
-
----
-
-## Linux
-
-```text
-Rust
-  ↓
-WebKitGTK
-  ↓
-WebKit
-```
-
-Le backend Linux doit prendre en compte :
-
-```text
-Wayland
-X11
-GTK
-```
-
----
-
-# 8. WebView abstraction
-
-Le reste de Kitron ne doit jamais dépendre directement de :
-
-```text
-WKWebView
-WebView2
-WebKitGTK
-```
-
-Créer une abstraction commune.
-
-Conceptuellement :
-
-```rust
-trait WebView {
-    fn load_url(&self, url: &str);
-    fn load_file(&self, path: &str);
-    fn reload(&self);
-    fn stop(&self);
-    fn close(&self);
-}
-```
-
-Implémentations :
-
-```text
-native/
-├── macos/
-├── windows/
-└── linux/
-```
-
----
-
-# 9. Process architecture
-
-Kitron doit séparer le renderer et Node.js.
-
-Architecture :
-
-```text
-                    Kitron Host
-                        │
-             ┌──────────┴──────────┐
-             │                     │
-             ▼                     ▼
-        Native WebView          Node.js
-             │                     │
-             ▼                     ▼
-       Renderer JS            Backend JS
-```
-
-Le renderer ne doit pas avoir accès directement à Node.js.
-
-Le backend Node.js ne doit pas être injecté directement dans le renderer.
-
----
-
-# 10. IPC
-
-L'IPC est le mécanisme central de communication.
-
-Deux communications principales existent :
-
-```text
-WebView ↔ Node.js
-WebView ↔ Rust
-```
-
-Et éventuellement :
-
-```text
-Node.js ↔ Rust
-```
-
-Le protocole doit être commun et typé.
-
----
-
-# 11. IPC protocol
-
-Structure minimale :
-
-```ts
-interface IPCRequest {
-  id: string;
-  channel: string;
-  payload: unknown;
-}
-
-interface IPCResponse {
-  id: string;
-  success: boolean;
-  payload?: unknown;
-  error?: IPCError;
-}
-
-interface IPCEvent {
-  channel: string;
-  payload: unknown;
-}
-
-interface IPCError {
-  code: string;
-  message: string;
-  details?: unknown;
-}
-```
-
-Toutes les communications doivent être asynchrones.
-
----
-
-# 12. Node.js IPC
-
-Une API Node.js peut être enregistrée :
-
-```ts
-import { ipc } from "kitron/node";
-
-ipc.handle(
-  "app.getVersion",
-  async () => {
-    return process.env.npm_package_version;
-  }
-);
-```
-
-Le frontend :
-
-```ts
-const version = await window.kitron.invoke(
-  "app.getVersion"
-);
-```
-
----
-
-# 13. Native IPC
-
-Les APIs natives suivent le même principe.
-
-Frontend :
-
-```ts
-await native.window.setAlwaysOnTop(true);
-```
-
-Flux :
-
-```text
-Frontend
-   ↓
-Kitron JS API
-   ↓
-IPC
-   ↓
-Rust
-   ↓
+       │
+       ▼
 OS
 ```
 
 ---
 
-# 14. API publique
+# 25. Support macOS
 
-Kitron doit exposer une API TypeScript simple.
+Première plateforme à supporter.
 
-Exemple :
-
-```ts
-import {
-  app,
-  BrowserWindow,
-  native,
-} from "kitron";
-```
-
-L'API doit être :
-
-- async-first
-- fortement typée
-- documentée
-- stable
-- indépendante du framework frontend
-
----
-
-# 15. App API
-
-```ts
-await app.ready();
-
-app.quit();
-
-app.exit(0);
-
-app.getName();
-
-app.getVersion();
-
-app.getPath("userData");
-
-app.getPath("documents");
-
-app.getPath("downloads");
-
-app.getPath("temp");
-
-app.isReady();
-```
-
----
-
-# 16. BrowserWindow
-
-Exemple :
-
-```ts
-const window = new BrowserWindow({
-  width: 1200,
-  height: 800,
-});
-```
-
-API initiale :
-
-```ts
-window.loadURL(url);
-
-window.loadFile(path);
-
-window.show();
-
-window.hide();
-
-window.close();
-
-window.focus();
-
-window.minimize();
-
-window.maximize();
-
-window.restore();
-
-window.setTitle(title);
-
-window.setSize(width, height);
-
-window.setPosition(x, y);
-
-window.setAlwaysOnTop(true);
-
-window.isMaximized();
-```
-
----
-
-# 17. Native API
-
-Les fonctionnalités natives doivent être regroupées dans :
-
-```ts
-native
-```
-
-Exemple :
-
-```ts
-import { native } from "kitron";
-
-await native.notification.show({
-  title: "Kitron",
-  body: "Hello World",
-});
-```
-
-API initiale :
+Le runtime doit utiliser les APIs natives macOS lorsque nécessaire :
 
 ```text
-native.window
-native.notification
-native.dialog
-native.menu
-native.tray
-native.clipboard
-native.screen
-native.shortcut
-native.power
+AppKit
+Foundation
+UserNotifications
+NSWorkspace
+NSPasteboard
+NSWindow
+NSStatusItem
+```
+
+Rust doit communiquer avec ces APIs via une couche native appropriée.
+
+Ne pas simuler les fonctionnalités macOS en JavaScript.
+
+---
+
+# 26. Support Windows
+
+Deuxième plateforme.
+
+Utiliser les APIs natives Windows nécessaires :
+
+```text
+Win32
+WinRT
+Windows App SDK
+Shell APIs
+Notification APIs
+```
+
+Le développeur ne doit pas connaître ces APIs.
+
+---
+
+# 27. React Native Desktop
+
+React Native doit être utilisé comme moteur UI.
+
+Il faut déterminer la meilleure stratégie pour le desktop :
+
+```text
+React Native Fabric
++
+Native Components
++
+JSI
+```
+
+Le projet doit éviter de réinventer le renderer React Native.
+
+L'objectif est de réutiliser au maximum l'écosystème React Native existant.
+
+---
+
+# 28. Node.js + React Native
+
+Node.js et React Native sont deux environnements JavaScript différents.
+
+Ils doivent pouvoir communiquer proprement.
+
+Architecture :
+
+```text
+React Native JS
+       │
+       │
+       ▼
+   Kitron Runtime
+       │
+       ▼
+   Node.js Runtime
+```
+
+Prévoir une API :
+
+```ts
+node.start()
+node.stop()
+node.restart()
+node.status()
+```
+
+Exemple :
+
+```ts
+await node.start({
+  entry: "./backend/index.ts",
+});
 ```
 
 ---
 
-# 18. Filesystem
+# 29. Backend local
 
-Kitron ne doit pas réimplémenter inutilement le filesystem.
+Une application peut embarquer son propre backend :
 
-Utiliser Node.js :
-
-```ts
-import fs from "node:fs/promises";
-
-await fs.readFile(path);
-
-await fs.writeFile(path, content);
-
-await fs.readdir(path);
-
-await fs.mkdir(path);
+```text
+my-app/
+├── src/
+│   ├── App.tsx
+│   └── ...
+│
+├── backend/
+│   └── index.ts
+│
+└── package.json
 ```
 
-Kitron peut ajouter des APIs ergonomiques au-dessus de Node.js uniquement lorsqu'elles apportent une réelle valeur.
+Kitron démarre Node automatiquement.
+
+```text
+Application start
+       │
+       ▼
+React Native
+       │
+       └──── Node backend
+```
+
+Le backend peut fournir :
+
+```text
+HTTP
+WebSocket
+RPC
+Database
+Workers
+File processing
+AI
+```
 
 ---
 
-# 19. Child Processes
+# 30. Communication React Native ↔ Node
 
-Utiliser Node.js :
+Éviter de forcer toutes les communications à passer par HTTP localhost.
 
-```ts
-import { spawn } from "node:child_process";
+Prévoir un mécanisme IPC/RPC natif :
 
-const process = spawn(
-  "git",
-  ["status"]
-);
+```text
+React Native
+      │
+      ▼
+Kitron IPC
+      │
+      ▼
+Node.js
 ```
 
-Kitron ne doit pas remplacer `child_process`.
-
-Une API optionnelle peut être proposée :
+API possible :
 
 ```ts
-await shell.exec("git status");
+const result = await backend.invoke("users.get", {
+  id: 123,
+});
 ```
 
-mais Node.js doit rester accessible.
+Le système doit utiliser des transports efficaces.
 
 ---
 
-# 20. Security model
+# 31. Performance
 
-Le renderer ne doit jamais obtenir directement :
+La performance est un objectif majeur.
 
-```ts
-window.require
-window.process
-window.fs
-window.node
+Principes :
+
+1. Éviter Chromium.
+2. Utiliser React Native pour le rendu.
+3. Utiliser JSI pour les appels haute fréquence.
+4. Éviter les sérialisations JSON inutiles.
+5. Éviter les copies mémoire inutiles.
+6. Utiliser Rust pour les opérations natives lourdes.
+7. Utiliser Node pour les APIs qu'il gère déjà efficacement.
+8. Garder les communications IPC asynchrones.
+9. Éviter de bloquer le thread UI.
+10. Utiliser des workers pour les tâches lourdes.
+
+---
+
+# 32. Architecture des threads
+
+Ne jamais bloquer le thread UI.
+
+Architecture cible :
+
+```text
+UI Thread
+    │
+    ├── React Native
+    │
+    └── User interaction
+
+Rust
+    │
+    ├── Native operations
+    ├── IO
+    └── background tasks
+
+Node
+    │
+    ├── Backend
+    ├── Workers
+    └── IO
 ```
 
-Interdit :
+---
+
+# 33. Gestion des erreurs
+
+Toutes les APIs doivent avoir des erreurs typées.
+
+Exemple :
 
 ```ts
-window.node = process;
+try {
+  await window.create();
+} catch (error) {
+  if (error.code === "WINDOW_CREATION_FAILED") {
+    // ...
+  }
+}
+```
+
+Ne jamais retourner uniquement :
+
+```ts
+throw new Error("Something went wrong");
 ```
 
 Préférer :
 
 ```ts
-window.kitron = {
-  invoke,
-  native,
-};
+{
+  code: "WINDOW_CREATION_FAILED",
+  message: "...",
+  platform: "macos"
+}
 ```
-
-Le bridge doit appliquer une whitelist d'APIs.
 
 ---
 
-# 21. Permissions
+# 34. Logs
 
-Les capacités sensibles doivent être configurables.
-
-Exemple :
+Kitron doit fournir :
 
 ```ts
-export default {
-  permissions: {
-    filesystem: true,
-    childProcess: true,
-    notifications: true,
-    globalShortcuts: false,
-  },
-};
+logger.info()
+logger.warn()
+logger.error()
+logger.debug()
 ```
 
-Les permissions doivent être vérifiées avant l'exécution d'une opération sensible.
-
----
-
-# 22. Default frontend stack
-
-**TanStack Start + Vite est le stack frontend par défaut de Kitron.**
-
-Une nouvelle application :
-
-```bash
-pnpm create kitron my-app
-```
-
-doit être initialisée avec :
-
-```text
-TanStack Start
-React
-TypeScript
-Vite
-```
-
----
-
-# 23. Pourquoi TanStack Start
-
-TanStack Start fournit par défaut :
-
-- TanStack Router
-- routing type-safe
-- React
-- TypeScript
-- Vite
-- code splitting
-- conventions modernes
-- server functions
-- architecture adaptée aux applications complexes
-
-Kitron doit profiter de cet écosystème sans coupler son runtime desktop à TanStack Start.
-
----
-
-# 24. Vite
-
-Vite est le bundler et dev server officiel de Kitron.
-
-En développement :
-
-```text
-kitron dev
-     │
-     ├── Vite
-     │    └── TanStack Start
-     │
-     ├── Node.js
-     │
-     └── Rust Host
-          └── Native WebView
-```
-
-Le WebView charge l'application depuis Vite.
+Les logs Rust et Node doivent pouvoir être centralisés.
 
 Exemple :
 
 ```text
-http://localhost:5173
-```
-
-Le port doit être configurable et pouvoir être automatiquement choisi.
-
----
-
-# 25. Framework independence
-
-TanStack Start est le **default**, mais Kitron ne doit pas dépendre de TanStack.
-
-Kitron doit pouvoir supporter :
-
-```text
-TanStack Start ← default
-React + Vite
-Vue + Vite
-Svelte + Vite
-Vanilla + Vite
-```
-
-L'API Kitron doit rester indépendante.
-
-Cette API :
-
-```ts
-await native.notification.show(...)
-```
-
-doit fonctionner avec n'importe quel frontend.
-
----
-
-# 26. Application structure
-
-Application par défaut :
-
-```text
-my-app/
-├── src/
-│   ├── routes/
-│   │   ├── __root.tsx
-│   │   └── index.tsx
-│   │
-│   ├── components/
-│   ├── lib/
-│   └── main.tsx
-│
-├── public/
-│
-├── app.config.ts
-├── vite.config.ts
-├── kitron.config.ts
-├── tsconfig.json
-└── package.json
-```
-
-Kitron doit respecter autant que possible les conventions standards de TanStack Start.
-
----
-
-# 27. Development mode
-
-Commande :
-
-```bash
-kitron dev
-```
-
-Pipeline :
-
-```text
-kitron dev
-     │
-     ├── Start Vite
-     │
-     ├── Start TanStack Start
-     │
-     ├── Start Node.js
-     │
-     └── Start Rust Host
-              │
-              └── Create Native WebView
-```
-
-Le hot reload doit fonctionner normalement.
-
----
-
-# 28. Production
-
-Commande :
-
-```bash
-kitron build
-```
-
-Pipeline :
-
-```text
-TanStack Start
-       ↓
-Vite build
-       ↓
-Web assets
-       ↓
-Node backend
-       ↓
-Rust native host
-       ↓
-Application bundle
+Kitron
+ ├── React Native logs
+ ├── Node logs
+ └── Rust logs
 ```
 
 ---
 
-# 29. Node.js distribution
+# 35. CLI
 
-Kitron doit embarquer son propre Node.js en production.
+Kitron doit avoir un CLI.
 
-Une application ne doit jamais dépendre du Node installé par l'utilisateur.
-
-Exemple :
-
-```text
-MyApp.app
-└── Resources
-    ├── node/
-    │   └── node
-    │
-    ├── app/
-    │
-    └── web/
-```
-
----
-
-# 30. Cross-platform Node.js
-
-Le runtime doit être construit pour :
-
-```text
-macOS arm64
-macOS x64
-
-Windows x64
-Windows arm64
-
-Linux x64
-Linux arm64
-```
-
-Le code TypeScript de l'application reste identique.
-
----
-
-# 31. CLI
-
-CLI principal :
+Exemples :
 
 ```bash
 kitron create my-app
+```
 
+```bash
 kitron dev
+```
 
+```bash
 kitron build
+```
 
+```bash
 kitron package
+```
 
+```bash
 kitron run
+```
 
+```bash
 kitron doctor
 ```
 
 ---
 
-# 32. Project creation
+# 36. Création d'une application
 
-Commande recommandée :
+Commande :
 
 ```bash
-pnpm create kitron my-app
+kitron create my-app
 ```
 
-Par défaut :
+Résultat :
 
 ```text
-TanStack Start
-React
-TypeScript
-Vite
-Kitron
-```
-
-L'utilisateur peut ensuite choisir un autre frontend si nécessaire.
-
----
-
-# 33. Repository structure
-
-Kitron doit être organisé comme un monorepo pnpm.
-
-```text
-kitron/
-├── packages/
-│   ├── core/
-│   ├── cli/
-│   ├── ipc/
-│   ├── runtime/
-│   ├── types/
-│   ├── native-api/
-│   └── vite-plugin/
+my-app/
+├── src/
+│   ├── App.tsx
+│   └── ...
 │
-├── native/
-│   └── rust/
-│       └── kitron-host/
+├── backend/
+│   └── index.ts
 │
-├── examples/
-│   ├── tanstack-start/
-│   ├── react/
-│   ├── vue/
-│   ├── svelte/
-│   └── vanilla/
-│
-├── tests/
-│   ├── unit/
-│   ├── integration/
-│   └── e2e/
-│
-├── docs/
+├── assets/
 │
 ├── package.json
-├── pnpm-workspace.yaml
-├── tsconfig.json
-└── instruction.md
+└── kitron.config.ts
 ```
 
----
-
-# 34. Rust repository structure
-
-```text
-native/rust/kitron-host/
-
-src/
-├── main.rs
-├── lib.rs
-├── ipc.rs
-├── window.rs
-├── webview.rs
-├── menu.rs
-├── notification.rs
-├── tray.rs
-└── platform/
-    ├── mod.rs
-    ├── macos.rs
-    ├── windows.rs
-    └── linux.rs
-```
-
-Le code spécifique aux plateformes doit être isolé.
-
----
-
-# 35. Rust dependency philosophy
-
-Le Rust Bridge doit rester petit.
-
-Éviter d'utiliser Rust pour :
-
-- business logic
-- database
-- networking applicatif
-- filesystem applicatif
-- routing
-- configuration applicative
-- frontend
-- Node package management
-
-Ces responsabilités appartiennent à JavaScript/Node.js.
-
-Rust doit rester concentré sur :
-
-```text
-Native Window
-Native WebView
-Native OS APIs
-Native IPC
-```
-
----
-
-# 36. Native abstraction
-
-Une fonctionnalité native doit suivre :
-
-```text
-TypeScript API
-       ↓
-IPC
-       ↓
-Rust abstraction
-       ↓
-Platform implementation
-```
-
-Exemple :
-
-```text
-native.notification.show()
-       ↓
-notification.show
-       ↓
-NotificationService
-       ↓
-┌───────────────┬───────────────┬───────────────┐
-│ macOS         │ Windows       │ Linux         │
-│ UserNotif.    │ WinRT         │ Desktop       │
-└───────────────┴───────────────┴───────────────┘
-```
-
----
-
-# 37. Native API rule
-
-Une fonctionnalité doit être implémentée en Rust uniquement lorsqu'elle nécessite réellement une API native.
-
-Exemples :
-
-```text
-Read file
-→ Node.js
-
-Write file
-→ Node.js
-
-HTTP request
-→ Node.js
-
-Spawn process
-→ Node.js
-
-WebSocket
-→ Node.js
-
-Create native window
-→ Rust
-
-Create WebView
-→ Rust
-
-Native notification
-→ Rust
-
-Native menu
-→ Rust
-
-System tray
-→ Rust
-
-Global shortcut
-→ Rust
-```
-
-Cette règle est fondamentale.
-
----
-
-# 38. Performance
-
-Kitron doit viser une empreinte inférieure à Electron lorsque cela est raisonnablement possible.
-
-Les benchmarks doivent être reproductibles.
-
-Mesurer :
-
-```text
-Startup time
-Cold startup
-Warm startup
-RAM usage
-CPU usage
-WebView creation
-Node startup
-IPC latency
-IPC throughput
-Application size
-```
-
-RAM :
-
-```text
-Rust Host
-Node.js
-WebView
-Total
-```
-
----
-
-# 39. No false performance claims
-
-Ne jamais déclarer :
-
-> Kitron est 50 % plus rapide qu'Electron.
-
-sans benchmark reproductible.
-
-Les benchmarks doivent comparer :
-
-```text
-Même application
-Même machine
-Même fonctionnalité
-Même environnement
-Même scénario
-```
-
----
-
-# 40. Developer Experience
-
-Le développeur doit pouvoir créer une application avec :
+Le développeur doit pouvoir immédiatement :
 
 ```bash
-pnpm create kitron my-app
-
 cd my-app
-
-pnpm dev
+kitron dev
 ```
-
-Puis :
-
-```bash
-pnpm build
-```
-
-Il ne doit pas avoir à écrire de Rust pour utiliser les fonctionnalités standards de Kitron.
 
 ---
 
-# 41. Example application
+# 37. Configuration
 
 Exemple :
 
 ```ts
-import {
-  app,
-  BrowserWindow,
-  native,
-} from "kitron";
+export default {
+  app: {
+    name: "My App",
+    identifier: "com.example.myapp",
+    version: "1.0.0",
+  },
 
-await app.ready();
+  window: {
+    width: 1200,
+    height: 800,
+  },
 
-const window = new BrowserWindow({
-  width: 1200,
-  height: 800,
-  title: "My App",
-});
-
-await window.loadURL(
-  "http://localhost:5173"
-);
-
-await native.notification.show({
-  title: "My App",
-  body: "Application started",
-});
+  node: {
+    entry: "./backend/index.ts",
+  },
+};
 ```
 
 ---
 
-# 42. DevTools
+# 38. Build
 
-Kitron doit exposer les outils de développement natifs du moteur utilisé.
+Commande :
+
+```bash
+kitron build
+```
+
+Doit produire une application native :
+
+macOS :
+
+```text
+MyApp.app
+```
+
+Windows :
+
+```text
+MyApp.exe
+```
+
+Plus tard :
+
+```text
+.dmg
+.pkg
+.msi
+.exe
+```
+
+---
+
+# 39. Distribution
+
+Prévoir :
 
 ```text
 macOS
-→ WebKit Web Inspector
+├── .app
+├── .dmg
+└── notarization
 
 Windows
-→ WebView2 DevTools
-
-Linux
-→ WebKit Inspector
+├── .exe
+├── installer
+└── code signing
 ```
 
-API :
+Le système de packaging doit être intégré au CLI.
 
-```ts
-window.openDevTools();
-window.closeDevTools();
-window.reload();
+---
+
+# 40. Structure du repository Kitron
+
+Proposer :
+
+```text
+kitron/
+│
+├── packages/
+│   ├── core/
+│   ├── window/
+│   ├── dialog/
+│   ├── menu/
+│   ├── tray/
+│   ├── clipboard/
+│   ├── notification/
+│   ├── process/
+│   ├── shell/
+│   ├── shortcut/
+│   ├── updater/
+│   └── node/
+│
+├── runtime/
+│   ├── rust/
+│   ├── macos/
+│   └── windows/
+│
+├── cli/
+│
+├── templates/
+│
+├── examples/
+│
+├── tests/
+│
+└── docs/
 ```
 
 ---
 
-# 43. Logging
+# 41. MVP
 
-Kitron doit centraliser les logs provenant de :
+Ne pas essayer de construire toutes les fonctionnalités immédiatement.
 
-```text
-Renderer
-Node.js
-Rust
-```
-
-Exemple :
+Le MVP doit uniquement permettre :
 
 ```text
-[Kitron][Renderer] Application started
-[Kitron][Node] Backend started
-[Kitron][Rust] WebView created
+1. React Native fonctionne
+2. Une fenêtre desktop native fonctionne
+3. TypeScript fonctionne
+4. JSI fonctionne
+5. Rust fonctionne
+6. Node.js peut être lancé
+7. React Native peut communiquer avec Rust
+8. React Native peut communiquer avec Node
+9. macOS fonctionne
+10. Une application peut être packagée
 ```
 
-API :
+Premier exemple :
 
 ```ts
-logger.debug();
-logger.info();
-logger.warn();
-logger.error();
-```
+import { window } from "kitron";
 
----
-
-# 44. Error handling
-
-Toutes les erreurs Kitron doivent être typées.
-
-```ts
-class KitronError extends Error {
-  code: string;
-  details?: unknown;
-}
-```
-
-Codes minimum :
-
-```text
-NODE_START_FAILED
-NODE_CRASHED
-IPC_FAILED
-IPC_TIMEOUT
-WEBVIEW_FAILED
-WINDOW_FAILED
-NATIVE_API_FAILED
-PERMISSION_DENIED
-PLATFORM_UNSUPPORTED
-BUILD_FAILED
-```
-
----
-
-# 45. Plugins
-
-Kitron doit prévoir un système de plugins.
-
-Exemple :
-
-```ts
-import { definePlugin } from "kitron";
-
-export default definePlugin({
-  name: "my-plugin",
-
-  setup(api) {
-    api.command("hello", async () => {
-      return "Hello";
-    });
-  },
+const mainWindow = await window.create({
+  width: 1200,
+  height: 800,
 });
 ```
 
-Un plugin peut éventuellement posséder une partie Rust pour accéder à une fonctionnalité native spécifique.
-
-Mais l'API publique du plugin doit rester accessible depuis TypeScript.
+Si cela fonctionne, Kitron possède son premier vrai vertical slice.
 
 ---
 
-# 46. Auto Update
+# 42. Phase 2
 
-Prévoir une API :
-
-```ts
-import { updater } from "kitron";
-
-await updater.check();
-
-await updater.download();
-
-await updater.install();
-```
-
-L'implémentation peut utiliser des mécanismes différents selon la plateforme.
-
----
-
-# 47. Packaging
-
-Kitron doit produire :
-
-## macOS
+Ajouter :
 
 ```text
-.app
-.dmg
-```
-
-## Windows
-
-```text
-.exe
-.msi
-```
-
-## Linux
-
-```text
-.AppImage
-.deb
-.rpm
-```
-
-Le packaging doit inclure :
-
-```text
-Rust host
-Node.js runtime
-Application backend
-Frontend assets
-Resources
-```
-
-mais **pas Chromium**.
-
----
-
-# 48. Signing
-
-Le système de build doit prévoir :
-
-```text
-macOS code signing
-macOS notarization
-
-Windows code signing
-
-Linux package signing
-```
-
-Ces fonctionnalités doivent être intégrées progressivement.
-
----
-
-# 49. Tests
-
-Tests TypeScript :
-
-```text
-Core API
-IPC
-CLI
-Configuration
-```
-
-Tests Node.js :
-
-```text
-Runtime
-Process management
 Filesystem
-Networking
+Dialog
+Clipboard
+Shell
+Process
+Notification
+Menu
+Tray
 ```
 
-Tests Rust :
+---
+
+# 43. Phase 3
+
+Ajouter :
 
 ```text
-WebView
-Window
-Native APIs
+Node backend
 IPC
+Workers
+Deep links
+File associations
+Global shortcuts
+Auto updater
 ```
 
-Tests E2E :
+---
+
+# 44. Phase 4
+
+Ajouter :
 
 ```text
-TanStack Start
-        ↓
-Kitron
-        ↓
+Windows
+Code signing
+Installers
+Production updater
+Crash reporting
+Security hardening
+Performance profiling
+```
+
+---
+
+# 45. Règles absolues
+
+## Ne pas faire
+
+Ne pas :
+
+- intégrer Chromium
+- utiliser Electron
+- utiliser Vite comme dépendance du runtime
+- utiliser TanStack comme dépendance du runtime
+- transformer Kitron en framework web
+- réimplémenter Node en Rust
+- mettre la logique métier dans Rust
+- bloquer le thread React Native
+- exposer directement les APIs OS au développeur
+
+## Faire
+
+Toujours :
+
+- privilégier React Native
+- privilégier TypeScript
+- réutiliser Node.js
+- utiliser Rust pour la couche native
+- utiliser JSI lorsque nécessaire
+- conserver une API TypeScript simple
+- abstraire macOS et Windows
+- garder les APIs natives derrière Kitron
+- mesurer les performances
+- éviter les copies de données
+- garder le runtime minimal
+
+---
+
+# 46. Principe final
+
+Kitron doit être perçu comme :
+
+```text
+             Electron
+                 │
+        Chromium + Node
+                 │
+                 ▼
+
+              KITRON
+                 │
+     ┌───────────┼───────────┐
+     │           │           │
+React Native   Node        Rust
+     │           │           │
+     └───────────┼───────────┘
+                 │
+                 ▼
+            Native OS
+```
+
+La promesse :
+
+> **Build desktop applications with React Native and TypeScript, powered by Node.js and native Rust infrastructure — without Chromium.**
+
+Le développeur écrit principalement :
+
+```text
+React
+React Native
+TypeScript
 Node.js
-        ↓
+```
+
+Kitron s'occupe de :
+
+```text
 Rust
-        ↓
-Native OS
+macOS
+Windows
+Native APIs
+Packaging
+IPC
+Runtime
 ```
 
----
-
-# 50. First milestone
-
-La première milestone doit permettre :
-
-```bash
-pnpm create kitron my-app
-cd my-app
-pnpm dev
-```
-
-Résultat :
-
-```text
-TanStack Start
-      ↓
-Vite
-      ↓
-Native WebView
-      ↓
-Kitron API
-      ↓
-Node.js
-```
-
-L'application doit pouvoir :
-
-### Afficher une UI
-
-```tsx
-export default function App() {
-  return <h1>Hello Kitron</h1>;
-}
-```
-
-### Appeler Node.js
-
-```ts
-const result = await window.kitron.invoke("ping");
-```
-
-Résultat :
-
-```text
-pong
-```
-
-### Appeler le système natif
-
-```ts
-await native.notification.show({
-  title: "Kitron",
-  body: "Hello",
-});
-```
-
-### Contrôler une fenêtre
-
-```ts
-await native.window.setAlwaysOnTop(true);
-```
-
----
-
-# 51. MVP Definition of Done
-
-## Runtime
-
-- [ ] Node.js runtime embarqué
-- [ ] Node.js process lifecycle
-- [ ] Node.js crash handling
-- [ ] IPC Node.js ↔ WebView
-- [ ] IPC Rust ↔ WebView
-- [ ] IPC Node.js ↔ Rust
-
-## WebView
-
-- [ ] macOS WKWebView
-- [ ] Windows WebView2
-- [ ] Linux WebKitGTK
-- [ ] Navigation
-- [ ] Reload
-- [ ] DevTools
-- [ ] JavaScript execution
-
-## Window
-
-- [ ] Create
-- [ ] Close
-- [ ] Show
-- [ ] Hide
-- [ ] Resize
-- [ ] Move
-- [ ] Minimize
-- [ ] Maximize
-- [ ] Always on top
-- [ ] Title
-
-## Native APIs
-
-- [ ] Notifications
-- [ ] Dialogs
-- [ ] Menus
-- [ ] Tray
-- [ ] Clipboard
-- [ ] Global shortcuts
-
-## Developer experience
-
-- [ ] `kitron create`
-- [ ] `kitron dev`
-- [ ] `kitron build`
-- [ ] `kitron package`
-- [ ] TanStack Start template
-- [ ] Vite integration
-- [ ] React template
-- [ ] TypeScript types
-
-## Distribution
-
-- [ ] macOS `.app`
-- [ ] macOS `.dmg`
-- [ ] Windows `.exe`
-- [ ] Windows `.msi`
-- [ ] Linux `.AppImage`
-- [ ] Linux `.deb`
-- [ ] Linux `.rpm`
-
----
-
-# 52. Long-term architecture
-
-L'objectif final est :
-
-```text
-                       KITRON
-                          │
-             ┌────────────┴────────────┐
-             │                         │
-       Web Application             Node.js
-             │                         │
-   TanStack Start / Vite        npm ecosystem
-             │                         │
-             └──────────┬──────────────┘
-                        │
-                       IPC
-                        │
-                 Rust Bridge
-                        │
-          ┌─────────────┼─────────────┐
-          │             │             │
-        macOS        Windows         Linux
-          │             │             │
-      WKWebView       WebView2     WebKitGTK
-```
-
-Kitron doit conserver cette séparation :
-
-```text
-JavaScript
-    ↓
-Application logic
-    ↓
-Node.js
-    ↓
-Native capability when necessary
-    ↓
-Rust
-    ↓
-Operating System
-```
-
----
-
-# 53. Golden Rules
-
-Les règles suivantes sont prioritaires.
-
-### Rule 1
-
-> **Never bundle Chromium.**
-
-### Rule 2
-
-> **Use Node.js when Node.js already provides the required capability.**
-
-### Rule 3
-
-> **Use Rust only when native OS access is required.**
-
-### Rule 4
-
-> **Keep the public API TypeScript-first.**
-
-### Rule 5
-
-> **Keep TanStack Start + Vite as the default application stack.**
-
-### Rule 6
-
-> **Keep Kitron independent from React and TanStack internally.**
-
-### Rule 7
-
-> **Never expose unrestricted Node.js or native APIs to the renderer.**
-
-### Rule 8
-
-> **Keep the Rust bridge as small as possible.**
-
-### Rule 9
-
-> **Provide the same TypeScript API on macOS, Windows and Linux.**
-
-### Rule 10
-
-> **Prefer platform-native capabilities over reimplementing the operating system in JavaScript.**
-
----
-
-# 54. Final positioning
-
-Kitron doit être présenté comme :
-
-> **Kitron — A lightweight Electron alternative powered by Node.js, native WebViews and Rust.**
-
-Ou :
-
-> **Kitron — Desktop apps with TypeScript, Node.js and native WebViews.**
-
-Conceptuellement :
-
-```text
-Electron
-    =
-Node.js
-+
-Chromium
-+
-C++
-
-Kitron
-    =
-Node.js
-+
-Native WebView
-+
-Rust
-```
-
-Le principal avantage architectural recherché est de conserver l'écosystème et la flexibilité de Node.js tout en utilisant le moteur WebView fourni par chaque plateforme, plutôt que de distribuer un navigateur Chromium complet avec chaque application.
-
-Le projet doit rester **JavaScript/TypeScript-first** du point de vue du développeur d'applications, avec Rust limité à la couche nécessaire pour connecter le runtime JavaScript aux capacités natives de macOS, Windows et Linux.
+L'objectif ultime est d'obtenir une expérience développeur aussi simple qu'Electron, mais avec une architecture beaucoup plus proche du natif et sans embarquer Chromium.

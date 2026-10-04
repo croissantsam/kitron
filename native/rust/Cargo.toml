@@ -1,3 +1,0 @@
-[workspace]
-members = ["kitron-host"]
-resolver = "2"
