@@ -11,6 +11,8 @@
     "@kitron/core": "0.1.0",
     "@kitron/window": "0.1.0",
     "kitron": "0.1.0",
-    "@kitron/ui": "0.1.0"
+    "@kitron/ui": "0.1.0",
+    "@kitron/react": "0.1.0",
+    "react": "^19.3.0"
   }
 }

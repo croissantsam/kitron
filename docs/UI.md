@@ -1,16 +1,49 @@
 # Kitron UI — our own renderer
 
-No React Native. No webview. No Chromium. Kitron renders its own retained
-view tree, natively, on every window.
+No react-native fork. No webview. No Chromium. Two layers:
 
 ```text
-TypeScript (@kitron/ui)              Rust (kitron-runtime)
-  View/Text/Button/Input  ──►  ui.create / append / setProps / remove
-  render(window, element) ──►  UiManager (tree store, per-window roots)
-  flexbox style           ──►  taffy layout (viewport-rooted)
-  pixels                  ◄──  tiny-skia (rounded rects) + cosmic-text
-  onPress / onChange      ◄──  hit-test + ui.press / ui.change events
+React (@kitron/react)                    View store (kitron-runtime)
+  mainline react + react-reconciler ──►  ui.create / append / setProps…
+  JSX, hooks, state                ──►  UiManager (tree store, per-window)
+  <View>/<Text>/<Button>/<Input>   ──►  taffy layout (viewport-rooted)
+  onPress / onChangeText           ◄──  hit-test + ui.press / ui.change
+  pixels                           ◄──  tiny-skia + cosmic-text
 ```
+
+`@kitron/ui` is the imperative protocol layer underneath
+(`View()/Text()/render()` without React); `@kitron/react` is the
+recommended programming model. Both speak the same `ui.*` ops.
+
+## React layer
+
+Host tags are RN-core names (`View`, `Text`, `Button`, `TextInput`) as
+intrinsic elements — no fork, just `react` from npm:
+
+```tsx
+import { useState } from "react";
+import { Button, Text, View, render } from "@kitron/react";
+
+function App() {
+  const [count, setCount] = useState(0);
+  return (
+    <View style={{ flex: 1, alignItems: "center", justifyContent: "center" }}>
+      <Text>Clicked {count} times</Text>
+      <Button title="Go" onPress={() => setCount((c) => c + 1)} />
+    </View>
+  );
+}
+await render(<App />, main.id);
+```
+
+- `render(element, windowId)` flushes through the scheduler, then binds
+  the root (`ui.setRoot`). State updates patch live nodes.
+- Raw strings become text; nested `<Text>` flattens; `Button` takes
+  `title`; inputs take `value`/`onChangeText`.
+- `AppRegistry.registerComponent` + `runApplication(key, { rootTag })`,
+  `StyleSheet.create` (identity), `Platform.OS === "kitron"` included.
+- The reconciler carries React 19.x scheduling stubs mirroring
+  react-native's own host config (`resolveUpdatePriority`, …).
 
 ## Components
 
@@ -48,6 +81,7 @@ Styles are a flexbox subset. Anything else is rejected at the type level
 
 ## Deliberate non-goals
 
-HTML/CSS engine, webview fallback, Fabric compatibility. The protocol is
-small on purpose: four node kinds, one layout engine, typed errors
-(`UI_NOT_FOUND`) for everything else.
+HTML/CSS engine, webview fallback, react-native fork compatibility. The
+protocol is small on purpose: four node kinds, one layout engine, typed
+errors (`UI_NOT_FOUND`) for everything else. React compatibility means the
+`react` programming model — not the `react-native` native modules.

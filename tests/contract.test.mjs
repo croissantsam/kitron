@@ -227,4 +227,61 @@ describe("ipc envelope contract", () => {
     assert.equal(seen, "hello");
     core.setBridgeTransport(null);
   });
+
+  it("react renders state and routes press", async () => {
+    const core = await import("@kitron/core");
+    const props = {};
+    const ops = [];
+    const t = new core.InMemoryTransport();
+    t.on("ui", "create", async () => null);
+    t.on("ui", "append", async () => null);
+    t.on("ui", "setRoot", async () => null);
+    t.on("ui", "clearRoot", async () => null);
+    t.on("ui", "setStyle", async () => null);
+    t.on("ui", "setProps", async (_m, p) => { props[p.id] = p.props; ops.push(p.id); return null; });
+    t.on("ui", "remove", async () => null);
+    core.setBridgeTransport(t);
+    const React = await import("react");
+    const { render, unmount, __resetReactForTests, flushUi } = await import("@kitron/react");
+    __resetReactForTests();
+    function App() {
+      const [count, setCount] = React.useState(0);
+      return React.createElement("View", { style: { flex: 1 } },
+        React.createElement("Text", null, "Hello ", count),
+        React.createElement("Button", { title: "Go", onPress: () => setCount((c) => c + 1) }));
+    }
+    let setRoot = null;
+    t.on("ui", "setRoot", async (_m, p) => { setRoot = p; return null; });
+    await render(React.createElement(App), "winR");
+    assert.equal(props["r-1"].text, "Hello 0");
+    assert.ok(setRoot && setRoot.window === "winR" && typeof setRoot.root === "string");
+    // Button is r-2 (bottom-up creation): press it.
+    t.emit("ui.press", { windowId: "winR", nodeId: "r-2" });
+    await new Promise((r) => setTimeout(r, 200));
+    await flushUi();
+    assert.equal(props["r-1"].text, "Hello 1");
+    await unmount("winR");
+    core.setBridgeTransport(null);
+  });
+
+  it("react input change reaches onChangeText", async () => {
+    const core = await import("@kitron/core");
+    const t = new core.InMemoryTransport();
+    for (const m of ["create", "append", "setProps", "setStyle", "setRoot", "clearRoot", "remove"])
+      t.on("ui", m, async () => null);
+    core.setBridgeTransport(t);
+    const React = await import("react");
+    const { render, __resetReactForTests } = await import("@kitron/react");
+    __resetReactForTests();
+    let seen = "";
+    function App() {
+      return React.createElement("View", null,
+        React.createElement("TextInput", { value: "", placeholder: "type", onChangeText: (v) => (seen = v) }));
+    }
+    await render(React.createElement(App), "winI");
+    // r-1 = input (only child).
+    t.emit("ui.change", { windowId: "winI", nodeId: "r-1", value: "hi" });
+    assert.equal(seen, "hi");
+    core.setBridgeTransport(null);
+  });
 });
