@@ -36,26 +36,88 @@ impl<'a> Painter<'a> {
         Self { fonts, cache: cosmic_text::SwashCache::new() }
     }
 
-    pub fn paint(&mut self, pixmap: &mut tiny_skia::Pixmap, items: &[PlacedNode]) {
+    pub fn paint(
+        &mut self,
+        pixmap: &mut tiny_skia::Pixmap,
+        items: &[PlacedNode],
+        images: &std::collections::HashMap<String, crate::ui::LoadedImage>,
+    ) {
         // Window background = root background or white.
         let bg = items.first().and_then(|r| r.background.as_deref()).unwrap_or("#ffffff");
         pixmap.fill(parse_color(bg));
-        for item in items {
-            self.paint_node(pixmap, item);
+        let mut i = 0;
+        self.walk(pixmap, items, images, &mut i, 0, 0.0, 0.0);
+    }
+
+    /// Pre-order walk: children (depth+1 runs) render after their parent.
+    /// Scrollable nodes paint children into a bounds-sized layer so content
+    /// clips exactly — no mask bookkeeping, nesting-safe.
+    fn walk(
+        &mut self,
+        pixmap: &mut tiny_skia::Pixmap,
+        items: &[PlacedNode],
+        images: &std::collections::HashMap<String, crate::ui::LoadedImage>,
+        i: &mut usize,
+        depth: usize,
+        ox: f32,
+        oy: f32,
+    ) {
+        while *i < items.len() && items[*i].depth >= depth {
+            if items[*i].depth != depth {
+                return; // Belongs to an ancestor level.
+            }
+            let item = &items[*i];
+            if item.scrollable && item.width > 1.0 && item.height > 1.0 {
+                self.paint_node(pixmap, item, images, ox, oy, true);
+                if let Some(mut layer) = tiny_skia::Pixmap::new(item.width as u32, item.height as u32) {
+                    *i += 1;
+                    self.walk(&mut layer, items, images, i, depth + 1, ox - item.x, oy - item.y);
+                    pixmap.draw_pixmap(
+                        0,
+                        0,
+                        layer.as_ref(),
+                        &tiny_skia::PixmapPaint::default(),
+                        tiny_skia::Transform::from_row(1.0, 0.0, 0.0, 1.0, item.x, item.y),
+                        None,
+                    );
+                } else {
+                    *i += 1;
+                    self.skip_subtree(items, i, depth);
+                }
+            } else {
+                self.paint_node(pixmap, item, images, ox, oy, false);
+                *i += 1;
+                self.walk(pixmap, items, images, i, depth + 1, ox, oy);
+            }
         }
     }
 
-    fn paint_node(&mut self, pixmap: &mut tiny_skia::Pixmap, item: &PlacedNode) {
+    fn skip_subtree(&mut self, items: &[PlacedNode], i: &mut usize, depth: usize) {
+        while *i < items.len() && items[*i].depth > depth {
+            *i += 1;
+        }
+    }
+
+    fn paint_node(
+        &mut self,
+        pixmap: &mut tiny_skia::Pixmap,
+        item: &PlacedNode,
+        images: &std::collections::HashMap<String, crate::ui::LoadedImage>,
+        ox: f32,
+        oy: f32,
+        bg_only: bool,
+    ) {
         if item.width <= 0.0 || item.height <= 0.0 {
             return;
         }
+        let (x, y) = (item.x + ox, item.y + oy);
         // Backgrounds: views (when set), buttons, inputs.
         let draws_bg = item.background.is_some()
             && !matches!(item.kind, UiKind::Text)
             || matches!(item.kind, UiKind::Button | UiKind::TextInput);
         if draws_bg {
             let bg = item.background.clone().unwrap_or_else(|| "#e8e8e8".into());
-            let path = rounded_rect(item.x, item.y, item.width, item.height, item.border_radius);
+            let path = rounded_rect(x, y, item.width, item.height, item.border_radius);
             let mut paint = tiny_skia::Paint::default();
             paint.set_color(parse_color(&bg));
             paint.anti_alias = true;
@@ -80,13 +142,22 @@ impl<'a> Painter<'a> {
                 );
             }
         }
+        // Images paint their pixels (scaled to the node box).
+        if item.kind == UiKind::Image {
+            if let Some(img) = images.get(&item.id) {
+                self.paint_image(pixmap, img, x, y, item.width, item.height);
+            }
+        }
+        if bg_only {
+            return;
+        }
         if !item.text.is_empty() {
             let pad = 8.0;
             self.paint_text(
                 pixmap,
                 &item.text,
-                item.x + pad,
-                item.y + pad,
+                x + pad,
+                y + pad,
                 (item.width - pad * 2.0).max(1.0),
                 item.font_size,
                 &item.color,
@@ -96,11 +167,54 @@ impl<'a> Painter<'a> {
                 let w = text_width(self.fonts, &item.text, item.font_size, item.width);
                 let mut paint = tiny_skia::Paint::default();
                 paint.set_color(parse_color(&item.color));
-                if let Some(r) = tiny_skia::Rect::from_xywh(item.x + pad + w + 2.0, item.y + pad, 2.0, item.font_size * 1.2) {
+                if let Some(r) = tiny_skia::Rect::from_xywh(x + pad + w + 2.0, y + pad, 2.0, item.font_size * 1.2) {
                     pixmap.fill_rect(r, &paint, tiny_skia::Transform::identity(), None);
                 }
             }
         }
+    }
+
+    fn paint_image(
+        &mut self,
+        pixmap: &mut tiny_skia::Pixmap,
+        img: &crate::ui::LoadedImage,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+    ) {
+        if img.width == 0 || img.height == 0 || w <= 0.0 || h <= 0.0 {
+            return;
+        }
+        // Straight RGBA bytes → premultiplied pixmap.
+        let mut prem = match tiny_skia::Pixmap::new(img.width, img.height) {
+            Some(p) => p,
+            None => return,
+        };
+        for (d, s) in prem.pixels_mut().iter_mut().zip(img.rgba.chunks_exact(4)) {            let (r, g, b, a) = (s[0] as u32, s[1] as u32, s[2] as u32, s[3] as u32);
+            *d = tiny_skia::PremultipliedColorU8::from_rgba(
+                (r * a / 255) as u8,
+                (g * a / 255) as u8,
+                (b * a / 255) as u8,
+                a as u8,
+            )
+            .unwrap_or(tiny_skia::PremultipliedColorU8::TRANSPARENT);
+        }
+        pixmap.draw_pixmap(
+            0,
+            0,
+            prem.as_ref(),
+            &tiny_skia::PixmapPaint::default(),
+            tiny_skia::Transform::from_row(
+                w / img.width as f32,
+                0.0,
+                0.0,
+                h / img.height as f32,
+                x,
+                y,
+            ),
+            None,
+        );
     }
 
     fn paint_text(
@@ -308,7 +422,7 @@ mod tests {
         let mut fonts = cosmic_text::FontSystem::new();
         let mut painter = Painter::new(&mut fonts);
         let mut pixmap = tiny_skia::Pixmap::new(800, 600).unwrap();
-        painter.paint(&mut pixmap, &placed);
+        painter.paint(&mut pixmap, &placed, &std::collections::HashMap::new());
 
         // Button center must carry the red fill.
         let btn = placed.iter().find(|p| p.id == "btn").unwrap();

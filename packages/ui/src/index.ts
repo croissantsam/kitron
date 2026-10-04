@@ -22,6 +22,7 @@ export type Dimension = number | `${number}%` | "auto";
 
 export interface UiStyle {
   flex?: number;
+  shrink?: number;
   direction?: "column" | "row" | "column-reverse" | "row-reverse";
   align?: "center" | "start" | "end" | "stretch" | "baseline";
   justify?: "center" | "start" | "end" | "between" | "around" | "evenly";

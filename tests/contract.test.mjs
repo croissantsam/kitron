@@ -284,4 +284,91 @@ describe("ipc envelope contract", () => {
     assert.equal(seen, "hi");
     core.setBridgeTransport(null);
   });
+
+  it("rn-compat: FlatList + Pressable + StyleSheet", async () => {
+    const core = await import("@kitron/core");
+    const creates = [];
+    const t = new core.InMemoryTransport();
+    for (const m of ["create", "append", "setProps", "setStyle", "setRoot", "clearRoot", "remove"])
+      t.on("ui", m, async (_m, p) => { if (m === "create") creates.push(p); return null; });
+    core.setBridgeTransport(t);
+    const React = await import("react");
+    const RN = await import("@kitron/react-native");
+    const { __resetReactForTests, flushUi } = await import("@kitron/react");
+    __resetReactForTests();
+    const pressed = [];
+    function App() {
+      return React.createElement(RN.FlatList, {
+        data: [{ id: "a", title: "Alpha" }, { id: "b", title: "Beta" }],
+        keyExtractor: (item) => item.id,
+        renderItem: ({ item }) => React.createElement(RN.Pressable, {
+          onPress: () => pressed.push(item.id),
+          children: React.createElement(RN.Text, { style: { fontSize: 16 } }, item.title),
+        }),
+      });
+    }
+    const { render } = await import("@kitron/react");
+    await render(React.createElement(App), "winRN");
+    // Two pressable rows created (pressable views participate in hit-test).
+    const pressables = creates.filter((c) => c.props && c.props.pressable === true);
+    assert.equal(pressables.length, 2);
+    // StyleSheet.create is identity; flatten merges arrays.
+    assert.deepEqual(RN.StyleSheet.flatten([{ flex: 1 }, { padding: 4 }]), { flex: 1, padding: 4 });
+    // Press first row.
+    t.emit("ui.press", { windowId: "winRN", nodeId: pressables[0].id });
+    await new Promise((r) => setTimeout(r, 100));
+    await flushUi();
+    assert.deepEqual(pressed, ["a"]);
+    core.setBridgeTransport(null);
+  });
+
+  it("rn-compat: ScrollView onScroll + Image uri + Alert + Animated", async () => {
+    const core = await import("@kitron/core");
+    const creates = [];
+    const t = new core.InMemoryTransport();
+    for (const m of ["create", "append", "setProps", "setStyle", "setRoot", "clearRoot", "remove"])
+      t.on("ui", m, async (_m, p) => { if (m === "create") creates.push(p); return null; });
+    t.on("dialog", "message", async (_m, p) => ({ button: 1 }));
+    core.setBridgeTransport(t);
+    const React = await import("react");
+    const RN = await import("@kitron/react-native");
+    const { __resetReactForTests } = await import("@kitron/react");
+    __resetReactForTests();
+    const scrolled = [];
+    function App() {
+      return React.createElement(RN.ScrollView, {
+        onScroll: (e) => scrolled.push(e.contentOffset),
+        children: React.createElement(RN.Image, { source: { uri: "file:///tmp/x.png" } }),
+      });
+    }
+    const { render } = await import("@kitron/react");
+    await render(React.createElement(App), "winS");
+    const scrollView = creates.find((c) => c.kind === "view" && c.props && c.props.scrollable === true);
+    assert.ok(scrollView, "scrollable view created");
+    const img = creates.find((c) => c.kind === "image");
+    assert.equal(img && img.props.uri, "file:///tmp/x.png");
+    t.emit("ui.scroll", { windowId: "winS", nodeId: scrollView.id, x: 0, y: 120 });
+    assert.deepEqual(scrolled, [{ x: 0, y: 120 }]);
+    // Alert resolves the pressed button.
+    let alerted = "";
+    await RN.Alert.alert("Sure?", "Really", [{ text: "No" }, { text: "Yes", onPress: () => (alerted = "yes") }]);
+    assert.equal(alerted, "yes");
+    // Animated timing drives a value.
+    const v = new RN.Animated.Value(0);
+    const seen = [];
+    v.addListener((x) => seen.push(x));
+    await new Promise((resolve) => RN.Animated.timing(v, { toValue: 1, duration: 40 }).start(() => resolve()));
+    assert.ok(v.getValue() === 1 && seen.length > 0);
+    assert.equal(RN.Platform.OS, "kitron");
+    assert.equal(typeof RN.Dimensions.get("window").width, "number");
+    assert.equal(RN.processColor("#ff0000"), 0xff0000ff);
+    core.setBridgeTransport(null);
+  });
+
+  it("rn-compat: native modules throw a guided error", async () => {
+    const RN = await import("@kitron/react-native");
+    assert.throws(() => RN.NativeModules.SomeNativeThing, (e) => e.code === "NATIVE_ADAPTER_MISSING");
+    assert.throws(() => RN.TurboModuleRegistry.get("Foo"), (e) => e.code === "NATIVE_ADAPTER_MISSING");
+    assert.throws(() => RN.requireNativeComponent("FooView"), (e) => e.code === "NATIVE_ADAPTER_MISSING");
+  });
 });

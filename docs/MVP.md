@@ -1,6 +1,8 @@
 # MVP checklist (§41)
 
-- [x] Own renderer (`@kitron/ui` → taffy layout → tiny-skia paint; no RN, no HTML)
+- [x] Own renderer (`@kitron/ui` → taffy layout → tiny-skia paint; no RN fork, no HTML)
+- [x] Mainline React (`@kitron/react` reconciler host: JSX, hooks, state)
+- [x] RN lib compat (`@kitron/react-native`: FlatList/Pressable/ScrollView/Image/Alert/Animated; `react-native` npm alias; guided error for native-code libs)
 - [x] Native window works (`winit` → AppKit/Win32; `WindowManager` + `kitron-runtime run`)
 - [x] TypeScript works (strict `tsconfig.base`, typed facades per package)
 - [x] Bridge works (`packages/core` bridge + `runtime` dispatch, same envelope; JSI-ready)

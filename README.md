@@ -2,7 +2,7 @@
 
 > Build desktop applications with TypeScript, powered by Node.js and native Rust infrastructure — without Chromium, without React Native.
 
-Mainline React renders through Kitron's own reconciler host. TypeScript is the app language. Node.js provides filesystem/network/crypto. Rust owns windows, menus, tray, dialogs, shortcuts, updater, and OS integration. No Electron, no Chromium, no web renderer.
+Mainline React renders through Kitron's own reconciler host, with a `react-native`-compatible API. TypeScript is the app language. Node.js provides filesystem/network/crypto. Rust owns windows, menus, tray, dialogs, shortcuts, updater, and OS integration. No Electron, no Chromium, no web renderer.
 
 ## Layout
 

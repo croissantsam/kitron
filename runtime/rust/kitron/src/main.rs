@@ -309,6 +309,26 @@ fn run_windowed(rt: Arc<Runtime>, title: String, w: u32, h: u32) -> anyhow::Resu
                             paint_window(&rt, lw);
                         }
                     }
+                    WindowEvent::MouseWheel { delta, .. } => {
+                        use winit::event::MouseScrollDelta;
+                        if let Some(lw) = windows.get_mut(&window_id) {
+                            let (x, y) = lw.cursor;
+                            let size = lw.handle.inner_size();
+                            let kid = lw.kitron_id.clone();
+                            let (dx, dy) = match delta {
+                                MouseScrollDelta::LineDelta(dx, dy) => (dx * 24.0, dy * 24.0),
+                                MouseScrollDelta::PixelDelta(p) => (p.x as f32, p.y as f32),
+                            };
+                            // Natural scrolling: content follows the fingers.
+                            match rt.ui.scroll_by(&kid, x, y, -dx, -dy, size.width as f32, size.height as f32) {
+                                Ok(Some((node, (sx, sy)))) => {
+                                    rt.app.emit("ui.scroll", serde_json::json!({ "windowId": kid, "nodeId": node, "x": sx, "y": sy }));
+                                }
+                                _ => {}
+                            }
+                            paint_window(&rt, lw);
+                        }
+                    }
                     WindowEvent::KeyboardInput { event: key, .. } => {
                         use winit::keyboard::{Key, NamedKey};
                         if key.state == ElementState::Pressed {

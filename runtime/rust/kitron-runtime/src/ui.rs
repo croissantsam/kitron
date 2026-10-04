@@ -14,7 +14,7 @@
 //! event loop paints each dirty window and feeds mouse/keyboard back in.
 
 use std::collections::{HashMap, HashSet};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 
 use serde::{Deserialize, Serialize};
 
@@ -30,6 +30,8 @@ pub enum UiKind {
     Button,
     #[serde(rename = "input")]
     TextInput,
+    #[serde(rename = "image")]
+    Image,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -39,6 +41,8 @@ pub struct UiProps {
     pub text: String,
     #[serde(default)]
     pub placeholder: String,
+    #[serde(default)]
+    pub uri: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub background: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -47,6 +51,12 @@ pub struct UiProps {
     pub font_size: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub border_radius: Option<f32>,
+    /// Node participates in press hit-testing (Text onPress, Pressable).
+    #[serde(default)]
+    pub pressable: bool,
+    /// View clips children and scrolls on wheel (ScrollView).
+    #[serde(default)]
+    pub scrollable: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -87,6 +97,8 @@ pub struct UiStyle {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub height: Option<UiSize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shrink: Option<f32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub padding: Option<f32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gap: Option<f32>,
@@ -100,6 +112,15 @@ pub struct UiNode {
     pub style: UiStyle,
     pub children: Vec<String>,
     pub parent: Option<String>,
+    /// Decoded pixels (Image nodes, filled asynchronously after `uri` load).
+    pub image: Option<LoadedImage>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LoadedImage {
+    pub width: u32,
+    pub height: u32,
+    pub rgba: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -118,6 +139,8 @@ pub struct PlacedNode {
     pub background: Option<String>,
     pub border_radius: f32,
     pub focused: bool,
+    pub depth: usize,
+    pub scrollable: bool,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -138,6 +161,12 @@ pub struct UiManager {
     focused: Mutex<HashMap<String, String>>,
     dirty: Mutex<HashSet<String>>,
     fonts: Mutex<cosmic_text::FontSystem>,
+    /// Scroll offsets per scrollable node id.
+    scroll: Mutex<HashMap<String, (f32, f32)>>,
+    /// Content extents per scrollable node id (from last layout).
+    content: Mutex<HashMap<String, (f32, f32)>>,
+    /// Called after async state changes (image loads) to repaint.
+    redraw_hook: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
 }
 
 impl UiManager {
@@ -148,6 +177,9 @@ impl UiManager {
             focused: Mutex::new(HashMap::new()),
             dirty: Mutex::new(HashSet::new()),
             fonts: Mutex::new(cosmic_text::FontSystem::new()),
+            scroll: Mutex::new(HashMap::new()),
+            content: Mutex::new(HashMap::new()),
+            redraw_hook: Mutex::new(None),
         }
     }
 
@@ -165,7 +197,7 @@ impl UiManager {
         if nodes.contains_key(&id) {
             return Err(UiError::Invalid(format!("ui.create: duplicate id {id}")));
         }
-        nodes.insert(id.clone(), UiNode { id, kind, props, style, children: vec![], parent: None });
+        nodes.insert(id.clone(), UiNode { id, kind, props, style, children: vec![], parent: None, image: None });
         Ok(())
     }
 
@@ -299,7 +331,7 @@ impl UiManager {
         let nodes = self.nodes.lock().unwrap();
         let focused = self.focused.lock().unwrap().get(window).cloned();
         let mut out = Vec::new();
-        self.collect(&taffy, &ids, &nodes, troot, 0.0, 0.0, focused.as_deref(), &mut out);
+        self.collect(&taffy, &ids, &nodes, troot, 0.0, 0.0, 0, focused.as_deref(), &mut out);
         Ok(out)
     }
 
@@ -316,8 +348,26 @@ impl UiManager {
     ) -> Result<taffy::NodeId, UiError> {
         let n = nodes.get(id).ok_or_else(|| UiError::NotFound(id.into()))?;
         let mut style = style_to_taffy(&n.style);
+        // Image leaves use intrinsic pixels unless explicitly sized.
+        if matches!(n.kind, UiKind::Image) {
+            if let Some(img) = &n.image {
+                if n.style.width.is_none() {
+                    style.size.width = taffy::Dimension::length(img.width as f32);
+                }
+                if n.style.height.is_none() {
+                    style.size.height = taffy::Dimension::length(img.height as f32);
+                }
+            } else {
+                if n.style.width.is_none() {
+                    style.size.width = taffy::Dimension::length(0.0);
+                }
+                if n.style.height.is_none() {
+                    style.size.height = taffy::Dimension::length(0.0);
+                }
+            }
+        }
         // Text leaves are pre-measured (single pass, viewport-bounded).
-        let is_leaf = !matches!(n.kind, UiKind::View);
+        let is_leaf = !matches!(n.kind, UiKind::View | UiKind::Image);
         if is_leaf {
             let label = display_text(n);
             let size = measure_text(fonts, &label, font_size_of(n), viewport_w);
@@ -327,6 +377,10 @@ impl UiManager {
             if n.style.height.is_none() {
                 style.size.height = taffy::Dimension::length(size.1.max(1.0));
             }
+        }
+        // Scroll containers anchor content at the start (ScrollView semantics).
+        if n.props.scrollable && n.style.justify.is_none() {
+            style.justify_content = Some(taffy::JustifyContent::FLEX_START);
         }
         // The root fills the viewport unless explicitly sized (CSS body semantics).
         if is_root {
@@ -350,6 +404,17 @@ impl UiManager {
         Ok(t)
     }
 
+    /// Redraw hook for async completions (image loads). Set once by Runtime.
+    pub fn set_redraw_hook(&self, hook: Arc<dyn Fn() + Send + Sync>) {
+        *self.redraw_hook.lock().unwrap() = Some(hook);
+    }
+
+    fn fire_redraw(&self) {
+        if let Some(hook) = self.redraw_hook.lock().unwrap().clone() {
+            hook();
+        }
+    }
+
     #[allow(clippy::too_many_arguments)]
     fn collect(
         &self,
@@ -359,6 +424,7 @@ impl UiManager {
         t: taffy::NodeId,
         ox: f32,
         oy: f32,
+        depth: usize,
         focused: Option<&str>,
         out: &mut Vec<PlacedNode>,
     ) {
@@ -375,6 +441,14 @@ impl UiManager {
             Err(_) => return,
         };
         let (x, y) = (ox + layout.location.x, oy + layout.location.y);
+        let scrollable = n.props.scrollable && matches!(n.kind, UiKind::View);
+        // Scroll offsets shift the content origin of scrollable nodes.
+        let (cox, coy) = if scrollable {
+            let s = self.scroll.lock().unwrap().get(id).cloned().unwrap_or((0.0, 0.0));
+            (x - s.0, y - s.1)
+        } else {
+            (x, y)
+        };
         out.push(PlacedNode {
             id: id.clone(),
             kind: n.kind,
@@ -389,11 +463,22 @@ impl UiManager {
             background: n.props.background.clone().or_else(|| default_bg(n.kind)),
             border_radius: n.props.border_radius.unwrap_or(0.0),
             focused: focused == Some(id.as_str()),
+            depth,
+            scrollable,
         });
+        // Content extents (for scroll clamping) = max child edge, content-relative.
+        let mut content = (0.0f32, 0.0f32);
         if let Ok(kids) = taffy.children(t) {
             for k in kids {
-                self.collect(taffy, ids, nodes, k, x, y, focused, out);
+                self.collect(taffy, ids, nodes, k, cox, coy, depth + 1, focused, out);
             }
+            for c in out.iter().rev().take_while(|c| c.depth > depth) {
+                content.0 = content.0.max(c.x + c.width - cox);
+                content.1 = content.1.max(c.y + c.height - coy);
+            }
+        }
+        if scrollable {
+            self.content.lock().unwrap().insert(id.clone(), content);
         }
     }
 
@@ -410,7 +495,14 @@ impl UiManager {
     ) -> Result<(), UiError> {
         let placed = self.layout(window, vw, vh)?;
         let mut fonts = self.fonts.lock().unwrap();
-        crate::paint::Painter::new(&mut fonts).paint(pixmap, &placed);
+        let images: std::collections::HashMap<String, LoadedImage> = self
+            .nodes
+            .lock()
+            .unwrap()
+            .iter()
+            .filter_map(|(id, n)| n.image.clone().map(|img| (id.clone(), img)))
+            .collect();
+        crate::paint::Painter::new(&mut fonts).paint(pixmap, &placed, &images);
         Ok(())
     }
     /// Topmost interactive node at a point (buttons + inputs win over views).
@@ -418,7 +510,9 @@ impl UiManager {
         let placed = self.layout(window, vw, vh)?;
         // Later nodes paint on top → iterate in reverse.
         for p in placed.iter().rev() {
-            if matches!(p.kind, UiKind::Button | UiKind::TextInput)
+            let interactive = matches!(p.kind, UiKind::Button | UiKind::TextInput)
+                || self.nodes.lock().unwrap().get(&p.id).map(|n| n.props.pressable).unwrap_or(false);
+            if interactive
                 && x >= p.x
                 && y >= p.y
                 && x <= p.x + p.width
@@ -428,6 +522,105 @@ impl UiManager {
             }
         }
         Ok(None)
+    }
+
+    /// Topmost scrollable container at a point (for wheel events).
+    pub fn scrollable_at(
+        &self,
+        window: &str,
+        x: f32,
+        y: f32,
+        vw: f32,
+        vh: f32,
+    ) -> Result<Option<String>, UiError> {
+        let placed = self.layout(window, vw, vh)?;
+        for p in placed.iter().rev() {
+            if p.scrollable && x >= p.x && y >= p.y && x <= p.x + p.width && y <= p.y + p.height {
+                return Ok(Some(p.id.clone()));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Scroll by (dx, dy) px, clamped to content. Returns (node, (sx, sy)).
+    /// Emits nothing — the caller forwards `ui.scroll` and repaints.
+    pub fn scroll_by(
+        &self,
+        window: &str,
+        x: f32,
+        y: f32,
+        dx: f32,
+        dy: f32,
+        vw: f32,
+        vh: f32,
+    ) -> Result<Option<(String, (f32, f32))>, UiError> {
+        let target = match self.scrollable_at(window, x, y, vw, vh)? {
+            Some(id) => id,
+            None => return Ok(None),
+        };
+        let placed = self.layout(window, vw, vh)?;
+        for q in &placed { eprintln!("PLACED {} d={} x={} y={} w={} h={}", q.id, q.depth, q.x, q.y, q.width, q.height); }
+        let node = placed.iter().find(|p| p.id == target);
+        let (w, h) = node.map(|p| (p.width, p.height)).unwrap_or((vw, vh));
+        let (cw, ch) = self.content.lock().unwrap().get(&target).cloned().unwrap_or((w, h));
+        let mut scroll = self.scroll.lock().unwrap();
+        let e = scroll.entry(target.clone()).or_insert((0.0, 0.0));
+        e.0 = (e.0 + dx).clamp(0.0, (cw - w).max(0.0));
+        e.1 = (e.1 + dy).clamp(0.0, (ch - h).max(0.0));
+        let off = *e;
+        drop(scroll);
+        self.dirty.lock().unwrap().insert(window.to_string());
+        Ok(Some((target, off)))
+    }
+
+    /// Fetch + decode an Image node's `uri` (file:// or http(s)://),
+    /// then mark dirty + repaint. Never blocks dispatch (spawned task).
+    pub async fn load_image(&self, id: String) {
+        let uri = match self.nodes.lock().unwrap().get(&id).map(|n| (n.kind, n.props.uri.clone())) {
+            Some((UiKind::Image, uri)) if !uri.is_empty() => uri,
+            _ => return,
+        };
+        let bytes = if let Some(path) = uri.strip_prefix("file://") {
+            tokio::fs::read(path).await.ok()
+        } else if uri.starts_with("https://") || uri.starts_with("http://") {
+            self.fetch_http(&uri).await
+        } else {
+            None
+        };
+        let bytes = match bytes {
+            Some(b) => b,
+            None => return,
+        };
+        let img = match image::load_from_memory(&bytes) {
+            Ok(i) => i.to_rgba8(),
+            Err(_) => return,
+        };
+        let (w, h) = (img.width(), img.height());
+        let loaded = LoadedImage { width: w, height: h, rgba: img.into_raw() };
+        if let Some(n) = self.nodes.lock().unwrap().get_mut(&id) {
+            n.image = Some(loaded);
+        }
+        self.dirty_root_of(&id);
+        self.fire_redraw();
+    }
+
+    async fn fetch_http(&self, uri: &str) -> Option<Vec<u8>> {
+        let client = reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(15))
+            .build()
+            .ok()?;
+        let res = client.get(uri).send().await.ok()?;
+        if !res.status().is_success() {
+            return None;
+        }
+        res.bytes().await.ok().map(|b| b.to_vec())
+    }
+
+    fn dirty_root_of(&self, id: &str) {
+        let nodes = self.nodes.lock().unwrap();
+        let root = root_of(&nodes, id);
+        drop(nodes);
+        self.dirty_root(&root);
     }
 
     /// Press at a point: focuses inputs, returns pressed button id if any.
@@ -505,12 +698,7 @@ impl Default for UiManager {
 }
 
 fn font_size_of(n: &UiNode) -> f32 {
-    n.props.font_size.unwrap_or(match n.kind {
-        UiKind::Text => 14.0,
-        UiKind::Button => 14.0,
-        UiKind::TextInput => 14.0,
-        UiKind::View => 14.0,
-    })
+    n.props.font_size.unwrap_or(14.0)
 }
 
 fn display_text(n: &UiNode) -> String {
@@ -524,7 +712,7 @@ fn display_text(n: &UiNode) -> String {
                 n.props.text.clone()
             }
         }
-        UiKind::View => String::new(),
+        UiKind::View | UiKind::Image => String::new(),
     }
 }
 
@@ -532,6 +720,7 @@ fn default_bg(kind: UiKind) -> Option<String> {
     match kind {
         UiKind::Button => Some("#e8e8e8".into()),
         UiKind::TextInput => Some("#ffffff".into()),
+        UiKind::Image => Some("#f0f0f0".into()),
         _ => None,
     }
 }
@@ -541,8 +730,8 @@ fn style_to_taffy(s: &UiStyle) -> taffy::Style {
     out.display = taffy::Display::Flex;
     if let Some(f) = s.flex {
         out.flex_grow = f;
-        out.flex_shrink = 1.0;
     }
+    out.flex_shrink = s.shrink.unwrap_or(1.0);
     out.flex_direction = match s.direction.as_deref() {
         Some("row") => taffy::FlexDirection::Row,
         Some("row-reverse") => taffy::FlexDirection::RowReverse,
@@ -677,6 +866,75 @@ mod tests {
         assert_eq!(v, "hi");
         let (_, v) = m.input_text("win", None, true).unwrap().unwrap();
         assert_eq!(v, "h");
+    }
+
+    #[test]
+    fn scroll_clamps_to_content() {
+        let m = mgr();
+        m.create("root".into(), UiKind::View, UiProps::default(), UiStyle {
+            flex: Some(1.0), ..Default::default()
+        }).unwrap();
+        m.create("list".into(), UiKind::View,
+            UiProps { scrollable: true, ..Default::default() },
+            UiStyle {
+                width: Some(UiSize::Pt(200.0)),
+                height: Some(UiSize::Pt(200.0)),
+                ..Default::default()
+            }).unwrap();
+        m.append("root", "list", None).unwrap();
+        for i in 0..3 {
+            let id = format!("row{i}");
+            m.create(id.clone(), UiKind::View, UiProps::default(), UiStyle {
+                width: Some(UiSize::Pt(200.0)),
+                height: Some(UiSize::Pt(200.0)),
+                shrink: Some(0.0),
+                ..Default::default()
+            }).unwrap();
+            m.append("list", &id, None).unwrap();
+        }
+        m.set_root("win", "root").unwrap();
+        // Content is 600 tall in a 200 viewport → max scroll 400.
+        let (_, (sx, sy)) = m.scroll_by("win", 400.0, 300.0, 0.0, 10_000.0, 800.0, 600.0).unwrap().unwrap();
+        assert_eq!((sx, sy), (0.0, 400.0));
+        // Scrolling shifts children: row0 moves up.
+        let placed = m.layout("win", 800.0, 600.0).unwrap();
+        let row0 = placed.iter().find(|p| p.id == "row0").unwrap();
+        assert!((row0.y - (row0.y)).abs() < 0.01); // sanity
+        let list = placed.iter().find(|p| p.id == "list").unwrap();
+        assert!((row0.y - (list.y - 400.0)).abs() < 1.0, "row0.y={} list.y={}", row0.y, list.y);
+        // Scrolling where nothing scrollable → None.
+        assert_eq!(m.scroll_by("win", 700.0, 500.0, 0.0, 10.0, 800.0, 600.0).unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn image_loads_intrinsic_size() {
+        use std::io::Cursor;
+        let m = mgr();
+        // 4x2 red PNG through the real decoder.
+        let mut buf = image::RgbaImage::new(4, 2);
+        for px in buf.pixels_mut() {
+            *px = image::Rgba([255, 0, 0, 255]);
+        }
+        let dynimg = image::DynamicImage::ImageRgba8(buf);
+        let mut bytes = Vec::new();
+        dynimg.write_to(&mut Cursor::new(&mut bytes), image::ImageFormat::Png).unwrap();
+        let dir = std::env::temp_dir();
+        let path = dir.join("kitron-test-img.png");
+        tokio::fs::write(&path, &bytes).await.unwrap();
+
+        m.create("root".into(), UiKind::View, UiProps::default(), UiStyle {
+            flex: Some(1.0), ..Default::default()
+        }).unwrap();
+        m.create("img".into(), UiKind::Image,
+            UiProps { uri: format!("file://{}", path.display()), ..Default::default() },
+            UiStyle::default()).unwrap();
+        m.append("root", "img", None).unwrap();
+        m.set_root("win", "root").unwrap();
+        m.load_image("img".into()).await;
+        let placed = m.layout("win", 800.0, 600.0).unwrap();
+        let img = placed.iter().find(|p| p.id == "img").unwrap();
+        assert_eq!((img.width, img.height), (4.0, 2.0));
+        tokio::fs::remove_file(&path).await.ok();
     }
 
     #[test]

@@ -39,13 +39,14 @@ export const Text = "Text";
 export const Button = "Button";
 export const TextInput = "TextInput";
 export const Input = "TextInput";
+export const Image = "Image";
 
-declare global {
+declare module "react" {
   // eslint-disable-next-line @typescript-eslint/no-namespace
   namespace JSX {
     interface IntrinsicElements {
-      View: { style?: UiStyle; children?: React.ReactNode };
-      Text: { style?: UiStyle; children?: React.ReactNode };
+      View: { style?: UiStyle; children?: React.ReactNode; onPress?: () => void; scrollable?: boolean; onScroll?: (e: { x: number; y: number }) => void };
+      Text: { style?: UiStyle; children?: React.ReactNode; onPress?: () => void };
       Button: { title: string; onPress?: () => void; style?: UiStyle };
       TextInput: {
         value?: string;
@@ -55,11 +56,15 @@ declare global {
         onChange?: (value: string) => void;
         style?: UiStyle;
       };
+      Image: {
+        source?: { uri?: string } | number;
+        style?: UiStyle;
+      };
     }
   }
 }
 
-type HostType = "View" | "Text" | "Button" | "TextInput";
+type HostType = "View" | "Text" | "Button" | "TextInput" | "Image";
 
 interface Instance {
   uiId: string | null;
@@ -95,7 +100,7 @@ export function flushUi(): Promise<void> {
 
 // ---- event routing (ui.press / ui.change → props handlers) ----
 
-const handlers = new Map<string, { press?: () => void; change?: (value: string) => void }>();
+const handlers = new Map<string, { press?: () => void; change?: (value: string) => void; scroll?: (e: { x: number; y: number }) => void }>();
 
 let listenerInstalled = false;
 function ensureListener(): void {
@@ -108,6 +113,10 @@ function ensureListener(): void {
   onNativeEvent("ui.change", (p) => {
     const { nodeId, value } = p as { nodeId?: string; value?: string };
     if (nodeId) handlers.get(nodeId)?.change?.(value ?? "");
+  });
+  onNativeEvent("ui.scroll", (p) => {
+    const { nodeId, x, y } = p as { nodeId?: string; x?: number; y?: number };
+    if (nodeId) handlers.get(nodeId)?.scroll?.({ x: x ?? 0, y: y ?? 0 });
   });
 }
 
@@ -130,6 +139,17 @@ function splitProps(hostType: HostType, props: Record<string, unknown>): { uiPro
   if (hostType === "TextInput") {
     uiProps["text"] = (props["value"] as string) ?? (props["defaultValue"] as string) ?? "";
     uiProps["placeholder"] = (props["placeholder"] as string) ?? "";
+  }
+  if (hostType === "Image") {
+    const source = props["source"] as { uri?: string } | undefined;
+    uiProps["uri"] = source?.uri ?? "";
+  }
+  // Views and Texts with onPress participate in hit-testing (Pressable).
+  if ((hostType === "View" || hostType === "Text") && props["onPress"] !== undefined) {
+    uiProps["pressable"] = true;
+  }
+  if (props["scrollable"] === true) {
+    uiProps["scrollable"] = true;
   }
   return { uiProps, style: style as UiStyle };
 }
@@ -158,8 +178,9 @@ function storeHandlers(inst: Instance): void {
   const press = inst.props["onPress"] as (() => void) | undefined;
   const change = (inst.props["onChangeText"] as ((v: string) => void) | undefined)
     ?? (inst.props["onChange"] as ((v: string) => void) | undefined);
-  if (press ?? change) {
-    handlers.set(inst.uiId, { press, change });
+  const scroll = inst.props["onScroll"] as ((e: { x: number; y: number }) => void) | undefined;
+  if (press ?? change ?? scroll) {
+    handlers.set(inst.uiId, { press, change, scroll });
   } else {
     handlers.delete(inst.uiId);
   }
@@ -252,7 +273,12 @@ const hostConfig = {
   ): Instance {
     const uiId = `r-${nextId++}`;
     const inst: Instance = { uiId, kind: "node", hostType: type, props, parent: null, children: [] };
-    const kind = type === "View" ? "view" : type === "Text" ? "text" : type === "Button" ? "button" : "input";
+    const kind =
+      type === "View" ? "view"
+      : type === "Text" ? "text"
+      : type === "Button" ? "button"
+      : type === "Image" ? "image"
+      : "input";
     const { uiProps, style } = splitProps(type, props);
     if (type === "Text") uiProps["text"] = "";
     void enqueue(() => invoke("ui", "create", { id: uiId, kind, props: uiProps, style }));

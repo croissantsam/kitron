@@ -37,7 +37,7 @@ impl Runtime {
     }
 
     pub fn new_with_permissions(app: Arc<AppManager>, permissions: Permissions) -> Self {
-        Self {
+        let rt = Self {
             windows: Arc::new(WindowManager::new()),
             app,
             node: Arc::new(NodeSidecar::new()),
@@ -49,7 +49,13 @@ impl Runtime {
             updater_state: Arc::new(crate::updater::UpdaterState::new()),
             crashes: Arc::new(crate::crash::CrashStore::new()),
             ui: Arc::new(crate::ui::UiManager::new()),
-        }
+        };
+        // Async UI completions (image loads) repaint without a dispatch round-trip.
+        rt.ui.set_redraw_hook(Arc::new({
+            let windows = rt.windows.clone();
+            move || windows.redraw_all()
+        }));
+        rt
     }
 
     /// Build OS tray icons / app menu / hotkeys on the main thread.
@@ -562,14 +568,21 @@ impl Runtime {
                 let style: crate::ui::UiStyle =
                     serde_json::from_value(p.get("style").cloned().unwrap_or(serde_json::json!({}))).unwrap_or_default();
                 match (nid.is_empty(), kind) {
-                    (false, Ok(kind)) => match self.ui.create(nid, kind, props, style) {
+                    (false, Ok(kind)) => match self.ui.create(nid.clone(), kind, props, style) {
                         Ok(()) => {
+                            // Images load async (file/http); completion repaints.
+                            if matches!(kind, crate::ui::UiKind::Image) {
+                                let ui = self.ui.clone();
+                                tokio::spawn(async move {
+                                    ui.load_image(nid).await;
+                                });
+                            }
                             self.windows.redraw_all();
                             IpcResponse::ok(id, serde_json::Value::Null)
                         }
                         Err(e) => IpcResponse::err(id, ui_code(&e), e.to_string()),
                     },
-                    _ => IpcResponse::err(id, "KITRON_INVALID_PARAMS", "ui.create: need id + kind(view|text|button|input)"),
+                    _ => IpcResponse::err(id, "KITRON_INVALID_PARAMS", "ui.create: need id + kind(view|text|button|input|image)"),
                 }
             }
             ("ui", "setProps") => match get_str("id") {
@@ -664,8 +677,32 @@ impl Runtime {
                     }
                 }
             }
-            ("ui", "press") => {
-                // Test/OS hook: press at window coordinates (the event loop
+            ("ui", "scroll") => {
+                // Test/OS hook: wheel delta at window coordinates.
+                let win = get_str("window").unwrap_or_default();
+                let (x, y) = (
+                    p.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                    p.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                );
+                let (dx, dy) = (
+                    p.get("dx").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                    p.get("dy").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                );
+                let (w, h) = (
+                    p.get("width").and_then(|v| v.as_f64()).unwrap_or(800.0) as f32,
+                    p.get("height").and_then(|v| v.as_f64()).unwrap_or(600.0) as f32,
+                );
+                match self.ui.scroll_by(&win, x, y, dx, dy, w, h) {
+                    Ok(Some((node, (sx, sy)))) => {
+                        self.app.emit("ui.scroll", serde_json::json!({ "windowId": win, "nodeId": node, "x": sx, "y": sy }));
+                        self.windows.redraw(&win);
+                        IpcResponse::ok(id, serde_json::json!({ "nodeId": node, "x": sx, "y": sy }))
+                    }
+                    Ok(None) => IpcResponse::ok(id, serde_json::Value::Null),
+                    Err(e) => IpcResponse::err(id, ui_code(&e), e.to_string()),
+                }
+            }
+            ("ui", "press") => {                // Test/OS hook: press at window coordinates (the event loop
                 // calls the same path for real mouse input).
                 let win = get_str("window").unwrap_or_default();
                 let (x, y) = (

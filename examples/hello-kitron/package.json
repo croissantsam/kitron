@@ -13,6 +13,7 @@
     "kitron": "0.1.0",
     "@kitron/ui": "0.1.0",
     "@kitron/react": "0.1.0",
-    "react": "^19.3.0"
+    "react": "^19.3.0",
+    "react-native": "file:../../packages/react-native"
   }
 }

@@ -60,6 +60,8 @@ export type KitronErrorCode =
   | "CRASH_NOT_FOUND"
   // own UI renderer
   | "UI_NOT_FOUND"
+  // native-module boundary (pure-JS libs work; native code needs an adapter)
+  | "NATIVE_ADAPTER_MISSING"
   // node backend
   | "NODE_START_FAILED"
   | "NODE_STOP_FAILED"
