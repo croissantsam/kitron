@@ -1,0 +1,23 @@
+[package]
+name = "kitron-runtime"
+version = "0.1.0"
+edition = "2021"
+description = "Kitron native runtime: windows (winit), dialogs, clipboard, notifications, shell, processes, tray, node sidecar, IPC server."
+
+[dependencies]
+kitron-core = { path = "../kitron-core" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+uuid = { workspace = true }
+rfd = { workspace = true }
+arboard = { workspace = true }
+notify-rust = { workspace = true }
+open = { workspace = true }
+chrono = { workspace = true }
+winit = { workspace = true }
+ed25519-dalek = { workspace = true }
+sha2 = { workspace = true }
+reqwest = { workspace = true }

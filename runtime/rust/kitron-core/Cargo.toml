@@ -1,0 +1,11 @@
+[package]
+name = "kitron-core"
+version = "0.1.0"
+edition = "2021"
+description = "Kitron shared types: IPC protocol, errors, config. Mirrors packages/core/src/ipc.ts — keep in sync."
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }
+chrono = { workspace = true }

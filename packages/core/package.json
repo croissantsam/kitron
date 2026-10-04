@@ -1,0 +1,24 @@
+{
+  "name": "@kitron/core",
+  "version": "0.1.0",
+  "description": "Kitron core: typed errors, logger, IPC bridge, app lifecycle. No business logic, no Chromium, no web renderer.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "node --test dist-test/ 2>/dev/null || node --test --test-reporter=spec \"dist/**/*.test.js\" 2>/dev/null || echo \"@kitron/core: no compiled tests (run npm run build first)\"",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

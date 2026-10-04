@@ -1,0 +1,26 @@
+{
+  "name": "kitron",
+  "version": "0.1.0",
+  "description": "Kitron public facade: app, window, dialog, clipboard, notification, shell, process.",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
+  "files": ["dist"],
+  "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc --noEmit -p tsconfig.json", "clean": "rm -rf dist" },
+  "dependencies": {
+    "@kitron/core": "0.1.0",
+    "@kitron/window": "0.1.0",
+    "@kitron/dialog": "0.1.0",
+    "@kitron/clipboard": "0.1.0",
+    "@kitron/notification": "0.1.0",
+    "@kitron/shell": "0.1.0",
+    "@kitron/process": "0.1.0",
+    "@kitron/tray": "0.1.0",
+    "@kitron/menu": "0.1.0",
+    "@kitron/shortcut": "0.1.0",
+    "@kitron/updater": "0.1.0",
+    "@kitron/node": "0.1.0"
+  },
+  "devDependencies": { "typescript": "^5.6.3" }
+}
