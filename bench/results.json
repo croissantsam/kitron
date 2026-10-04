@@ -1,0 +1,33 @@
+{
+  "machine": {
+    "os": "darwin arm64",
+    "cpus": "Apple M4",
+    "totalMemMiB": 16384
+  },
+  "runs": 5,
+  "kitron": {
+    "startupReadyMsMedian": 47,
+    "startupAllMs": [
+      920,
+      47,
+      43,
+      43,
+      50
+    ],
+    "idleRssMiB": 13.3,
+    "runtimeBinaryKiB": 13564
+  },
+  "electron": {
+    "startupReadyMsMedian": 678,
+    "startupAllMs": [
+      800,
+      716,
+      678,
+      654,
+      650
+    ],
+    "idleRssMiB": 346.3,
+    "frameworkKiB": 251648,
+    "paintFallback": false
+  }
+}
