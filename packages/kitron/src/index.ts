@@ -14,3 +14,7 @@ export { menu, Menu } from "@kitron/menu";
 export { shortcut } from "@kitron/shortcut";
 export { updater } from "@kitron/updater";
 export { node, backend } from "@kitron/node";
+export { crash } from "@kitron/crash";
+export type { CrashReport } from "@kitron/crash";
+export { render, unmount, View, Text, Button, TextInput } from "@kitron/ui";
+export type { Element, UiKind, UiStyle } from "@kitron/ui";

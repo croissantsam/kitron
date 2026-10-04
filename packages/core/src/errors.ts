@@ -24,6 +24,7 @@ export type KitronErrorCode =
   | "KITRON_IPC_TRANSPORT_CLOSED"
   | "KITRON_INVALID_PARAMS"
   | "KITRON_NOT_IMPLEMENTED"
+  | "PERMISSION_DENIED"
   // window
   | "WINDOW_CREATION_FAILED"
   | "WINDOW_NOT_FOUND"
@@ -53,6 +54,12 @@ export type KitronErrorCode =
   // updater
   | "UPDATE_CHECK_FAILED"
   | "UPDATE_SIGNATURE_INVALID"
+  | "UPDATE_DOWNLOAD_FAILED"
+  | "UPDATE_NOT_STAGED"
+  // crash reports
+  | "CRASH_NOT_FOUND"
+  // own UI renderer
+  | "UI_NOT_FOUND"
   // node backend
   | "NODE_START_FAILED"
   | "NODE_STOP_FAILED"

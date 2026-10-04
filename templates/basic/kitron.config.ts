@@ -1,4 +1,6 @@
-export default {
+import { defineConfig } from "@kitron/core/config";
+
+export default defineConfig({
   app: {
     name: "My App",
     identifier: "com.example.myapp",
@@ -13,4 +15,8 @@ export default {
   node: {
     entry: "./backend/index.ts",
   },
-};
+
+  // Sensitive capabilities are denied unless listed here (§23).
+  // Available: "shell", "process".
+  permissions: [],
+});

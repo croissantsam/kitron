@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@kitron/core": "0.1.0",
+    "@kitron/ui": "0.1.0",
     "@kitron/window": "0.1.0",
     "kitron": "0.1.0"
   }

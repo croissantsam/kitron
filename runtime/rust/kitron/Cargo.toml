@@ -14,6 +14,9 @@ kitron-runtime = { path = "../kitron-runtime" }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 winit = { workspace = true }
+raw-window-handle = { workspace = true }
+softbuffer = { workspace = true }
+tiny-skia = { workspace = true }
 clap = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }

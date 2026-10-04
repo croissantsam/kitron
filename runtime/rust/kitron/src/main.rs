@@ -43,6 +43,10 @@ enum Cmd {
         /// Window size override `WxH`, e.g. `1200x800`.
         #[arg(long)]
         size: Option<String>,
+        /// Granted sensitive domains (§23), e.g. `--permissions shell,process`.
+        /// Mirrors `permissions` in kitron.config.
+        #[arg(long)]
+        permissions: Option<String>,
     },
 }
 
@@ -53,9 +57,10 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let cli = Cli::parse();
+    kitron_runtime::crash::init(env!("CARGO_PKG_VERSION").to_string());
     match cli.cmd {
-        Cmd::Run { app_dir, headless, title, size } => {
-            run(app_dir, headless, title, size).await?;
+        Cmd::Run { app_dir, headless, title, size, permissions } => {
+            run(app_dir, headless, title, size, permissions).await?;
         }
     }
     Ok(())
@@ -65,10 +70,17 @@ mod anyhow {
     pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 }
 
-async fn run(app_dir: String, headless: bool, title: Option<String>, size: Option<String>) -> anyhow::Result<()> {
+async fn run(
+    app_dir: String,
+    headless: bool,
+    title: Option<String>,
+    size: Option<String>,
+    permissions: Option<String>,
+) -> anyhow::Result<()> {
     let (app, _rx) = AppManager::new();
     let app = Arc::new(app);
-    let rt = Arc::new(Runtime::new(app.clone()));
+    let perms = kitron_core::permissions::Permissions::parse_flag(permissions.as_deref());
+    let rt = Arc::new(Runtime::new_with_permissions(app.clone(), perms));
     app.ready();
 
     let (mut w, mut h) = (1200u32, 800u32);
@@ -114,74 +126,213 @@ async fn run(app_dir: String, headless: bool, title: Option<String>, size: Optio
 }
 
 fn run_windowed(rt: Arc<Runtime>, title: String, w: u32, h: u32) -> anyhow::Result<()> {
-    use winit::event::{Event, WindowEvent};
+    use kitron_runtime::os_events::KitronUserEvent;
+    use winit::event::{ElementState, Event, MouseButton, WindowEvent};
     use winit::event_loop::{ControlFlow, EventLoop};
-    use winit::window::WindowAttributes;
 
-    let event_loop = EventLoop::new()?;
-    let attrs = WindowAttributes::default()
-        .with_title(title.clone())
-        .with_inner_size(winit::dpi::LogicalSize::new(w, h));
+    type KitronWindow = Arc<winit::window::Window>;
+    struct LiveWindow {
+        kitron_id: String,
+        handle: KitronWindow,
+        surface: Option<softbuffer::Surface<KitronWindow, KitronWindow>>,
+        cursor: (f32, f32),
+    }
 
-    let mut window: Option<Arc<winit::window::Window>> = None;
-    let mut window_id: Option<String> = None;
+    let event_loop = EventLoop::<KitronUserEvent>::with_user_event().build()?;
+    kitron_runtime::os_events::set_proxy(event_loop.create_proxy());
+    let boot_attrs = (title.clone(), w, h);
+
+    let mut windows: std::collections::HashMap<winit::window::WindowId, LiveWindow> =
+        std::collections::HashMap::new();
+    #[allow(unused_mut)]
+    let mut first_hwnd: Option<isize> = None;
 
     // Pre-register the primary window in headless state so early
     // `window.get` calls from JS succeed before first paint.
     let boot_opts = kitron_core::WindowCreateOptions {
-        width: w,
-        height: h,
-        title: title.clone(),
+        width: boot_attrs.1,
+        height: boot_attrs.2,
+        title: boot_attrs.0.clone(),
         center: true,
         ..Default::default()
     };
-    let boot_info = rt.windows.create_headless(boot_opts);
-    window_id = Some(boot_info.id.clone());
+    rt.windows.create_headless(boot_opts);
+
+    // Open a real OS window for every headless record that has none, and
+    // drop locals whose records were closed. Main thread only.
+    let sync_windows = |rt: &Arc<Runtime>,
+                        windows: &mut std::collections::HashMap<winit::window::WindowId, LiveWindow>,
+                        elwt: &winit::event_loop::ActiveEventLoop,
+                        first_hwnd: &mut Option<isize>| {
+        windows.retain(|_, lw| rt.windows.get(&lw.kitron_id).is_ok());
+        for (kid, opts) in rt.windows.unbound() {
+            let attrs = winit::window::WindowAttributes::default()
+                .with_title(opts.title.clone())
+                .with_inner_size(winit::dpi::LogicalSize::new(opts.width, opts.height));
+            match elwt.create_window(attrs) {
+                Ok(created) => {
+                    let win: KitronWindow = Arc::new(created);
+                    let wid = win.id();
+                    let info = rt.windows.register_live(kid.clone(), &opts, win.clone());
+                    #[cfg(target_os = "windows")]
+                    {
+                        use raw_window_handle::HasWindowHandle;
+                        if first_hwnd.is_none() {
+                            if let Ok(handle) = win.window_handle() {
+                                if let raw_window_handle::RawWindowHandle::Win32(h) = handle.as_raw() {
+                                    *first_hwnd = Some(h.hwnd.get() as isize);
+                                }
+                            }
+                        }
+                    }
+                    let _ = first_hwnd.is_none();
+                    windows.insert(wid, LiveWindow { kitron_id: info.id.clone(), handle: win, surface: None, cursor: (0.0, 0.0) });
+                    tracing::info!(window_id = %info.id, "native window created");
+                }
+                Err(e) => tracing::error!(error = %e, "window creation failed"),
+            }
+        }
+    };
+
+    // Paint one window with its Kitron UI tree (no-op without a ui root).
+    let paint_window = |rt: &Arc<Runtime>, lw: &mut LiveWindow| {
+        let size = lw.handle.inner_size();
+        if size.width == 0 || size.height == 0 {
+            return;
+        }
+        let mut pixmap = match tiny_skia::Pixmap::new(size.width, size.height) {
+            Some(p) => p,
+            None => return,
+        };
+        match rt.ui.paint_window(&lw.kitron_id, size.width as f32, size.height as f32, &mut pixmap) {
+            Ok(()) => {}
+            Err(_) => return, // NoRoot: leave the window blank.
+        }
+        if lw.surface.is_none() {
+            match softbuffer::Context::new(lw.handle.clone()) {
+                Ok(ctx) => match softbuffer::Surface::new(&ctx, lw.handle.clone()) {
+                    Ok(s) => {
+                        std::mem::forget(ctx);
+                        lw.surface = Some(s);
+                    }
+                    Err(e) => {
+                        tracing::warn!(error = %e, "softbuffer surface failed");
+                        return;
+                    }
+                },
+                Err(e) => {
+                    tracing::warn!(error = %e, "softbuffer context failed");
+                    return;
+                }
+            }
+        }
+        if let Some(surface) = lw.surface.as_mut() {
+            use std::num::NonZeroU32;
+            if let (Some(ww), Some(hh)) = (NonZeroU32::new(size.width), NonZeroU32::new(size.height)) {
+                if surface.resize(ww, hh).is_ok() {
+                    if let Ok(mut buffer) = surface.buffer_mut() {
+                        let src = pixmap.pixels();
+                        for (dst, px) in buffer.iter_mut().zip(src.iter()) {
+                            // Premultiplied RGBA → 0x00RRGGBB.
+                            let a = px.alpha() as u32;
+                            if a == 0 {
+                                *dst = 0;
+                            } else {
+                                let (r, g, b) = (px.red() as u32, px.green() as u32, px.blue() as u32);
+                                *dst = ((r * 255 / a) << 16) | ((g * 255 / a) << 8) | (b * 255 / a);
+                            }
+                        }
+                        if let Err(e) = buffer.present() {
+                            tracing::warn!(error = %e, "present failed");
+                        }
+                    }
+                }
+            }
+        }
+    };
 
     event_loop.run(move |event, elwt| {
         elwt.set_control_flow(ControlFlow::Wait);
         match event {
             Event::Resumed => {
-                if window.is_none() {
-                    match elwt.create_window(attrs.clone()) {
-                        Ok(created) => {
-                            let win = Arc::new(created);
-                            // Upgrade the boot record to a live OS window.
-                            let _ = window_id.take();
-                            let id = uuid::Uuid::new_v4().to_string();
-                            let info = rt.windows.register_live(
-                                id.clone(),
-                                &kitron_core::WindowCreateOptions {
-                                    width: w,
-                                    height: h,
-                                    title: title.clone(),
-                                    ..Default::default()
-                                },
-                                win.clone(),
-                            );
-                            window_id = Some(info.id.clone());
-                            window = Some(win);
-                            tracing::info!(window_id = %info.id, "native window created");
+                sync_windows(&rt, &mut windows, elwt, &mut first_hwnd);
+            }
+            Event::UserEvent(KitronUserEvent::BindOs) => {
+                // Main thread: safe to create NSStatusItem / NSMenu / hotkeys.
+                rt.bind_os(first_hwnd);
+            }
+            Event::UserEvent(KitronUserEvent::SyncWindows) => {
+                sync_windows(&rt, &mut windows, elwt, &mut first_hwnd);
+            }
+            Event::WindowEvent { window_id, event } => {
+                let kid = windows.get(&window_id).map(|lw| lw.kitron_id.clone());
+                match event {
+                    WindowEvent::CloseRequested => {
+                        if let Some(kid) = kid {
+                            let _ = rt.windows.close(&kid);
                         }
-                        Err(e) => {
-                            tracing::error!(error = %e, "window creation failed");
+                        windows.remove(&window_id);
+                        if windows.is_empty() {
+                            tracing::info!("last window closed — exiting");
                             elwt.exit();
                         }
                     }
-                }
-            }
-            Event::WindowEvent { event: WindowEvent::CloseRequested, .. } => {
-                tracing::info!("close requested — exiting (Windows behavior; macOS keeps running in full shell)");
-                elwt.exit();
-            }
-            Event::WindowEvent { event: WindowEvent::Resized(s), .. } => {
-                if let Some(id) = &window_id {
-                    let _ = rt.windows.set_size(id, s.width, s.height);
-                }
-            }
-            Event::WindowEvent { event: WindowEvent::Moved(p), .. } => {
-                if let Some(id) = &window_id {
-                    let _ = rt.windows.set_position(id, p.x, p.y);
+                    WindowEvent::Resized(s) => {
+                        if let Some(kid) = &kid {
+                            let _ = rt.windows.set_size(kid, s.width, s.height);
+                        }
+                        if let Some(lw) = windows.get_mut(&window_id) {
+                            paint_window(&rt, lw);
+                        }
+                    }
+                    WindowEvent::RedrawRequested => {
+                        if let Some(lw) = windows.get_mut(&window_id) {
+                            paint_window(&rt, lw);
+                        }
+                    }
+                    WindowEvent::CursorMoved { position, .. } => {
+                        if let Some(lw) = windows.get_mut(&window_id) {
+                            lw.cursor = (position.x as f32, position.y as f32);
+                        }
+                    }
+                    WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
+                        if let Some(lw) = windows.get_mut(&window_id) {
+                            let (x, y) = lw.cursor;
+                            let size = lw.handle.inner_size();
+                            let kid = lw.kitron_id.clone();
+                            match rt.ui.press_at(&kid, x, y, size.width as f32, size.height as f32) {
+                                Ok(Some(btn)) => {
+                                    rt.app.emit("ui.press", serde_json::json!({ "windowId": kid, "nodeId": btn }));
+                                }
+                                _ => {}
+                            }
+                            paint_window(&rt, lw);
+                        }
+                    }
+                    WindowEvent::KeyboardInput { event: key, .. } => {
+                        use winit::keyboard::{Key, NamedKey};
+                        if key.state == ElementState::Pressed {
+                            if let Some(lw) = windows.get_mut(&window_id) {
+                                let kid = lw.kitron_id.clone();
+                                let mut changed: Option<(String, String)> = None;
+                                if let Some(text) = key.text.as_ref() {
+                                    changed = rt.ui.input_text(&kid, Some(text.as_str()), false).unwrap_or(None);
+                                } else if matches!(key.logical_key, Key::Named(NamedKey::Backspace)) {
+                                    changed = rt.ui.input_text(&kid, None, true).unwrap_or(None);
+                                }
+                                if let Some((node, value)) = changed {
+                                    rt.app.emit("ui.change", serde_json::json!({ "windowId": kid, "nodeId": node, "value": value }));
+                                }
+                                paint_window(&rt, lw);
+                            }
+                        }
+                    }
+                    WindowEvent::Moved(p) => {
+                        if let Some(kid) = &kid {
+                            let _ = rt.windows.set_position(kid, p.x, p.y);
+                        }
+                    }
+                    _ => {}
                 }
             }
             _ => {}

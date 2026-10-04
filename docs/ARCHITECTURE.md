@@ -1,7 +1,7 @@
 # Architecture
 
 ```text
-React Native (UI)
+Kitron UI (@kitron/ui reconciler → UiManager tree)
      │
 JavaScript / TypeScript (logic)
      │
@@ -16,7 +16,7 @@ Windows (Win32, WinRT, Shell, Notifications)
 ## Threads (§32)
 
 ```text
-UI thread:        React Native + interaction (never blocked)
+UI thread:        winit event loop + paint + input (never blocked)
 Rust background:  native IO, window ops, updater verify
 Node background:  backend HTTP/WS/RPC/DB/workers
 ```

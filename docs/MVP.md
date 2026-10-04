@@ -1,6 +1,6 @@
 # MVP checklist (§41)
 
-- [x] React Native renderer boundary defined (packages render via RN; no HTML renderer)
+- [x] Own renderer (`@kitron/ui` → taffy layout → tiny-skia paint; no RN, no HTML)
 - [x] Native window works (`winit` → AppKit/Win32; `WindowManager` + `kitron-runtime run`)
 - [x] TypeScript works (strict `tsconfig.base`, typed facades per package)
 - [x] Bridge works (`packages/core` bridge + `runtime` dispatch, same envelope; JSI-ready)

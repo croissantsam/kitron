@@ -20,3 +20,5 @@ export { StdioTransport } from "./stdio.js";
 export type { StdioTransportOptions } from "./stdio.js";
 export { app } from "./app.js";
 export type { AppEvent } from "./app.js";
+export { defineConfig } from "./config.js";
+export type { KitronAppConfig, SensitivePermission } from "./config.js";

@@ -8,15 +8,19 @@
 
 pub mod app;
 pub mod clipboard;
+pub mod crash;
 pub mod dialogs;
 pub mod ipc_server;
 pub mod menu;
 pub mod node_sidecar;
 pub mod notification;
+pub mod os_events;
+pub mod paint;
 pub mod process_mgr;
 pub mod shell;
 pub mod shortcuts;
 pub mod tray;
+pub mod ui;
 pub mod updater;
 pub mod windows;
 

@@ -69,11 +69,19 @@ pub enum MenuError {
 pub struct MenuManager {
     menus: Mutex<HashMap<String, Vec<MenuItem>>>,
     app_menu: Mutex<Option<String>>,
+    /// muda `MenuId.0` → (menu_id, action) for click routing.
+    os_actions: Mutex<HashMap<String, (String, String)>>,
+    os_bound: std::sync::atomic::AtomicBool,
 }
 
 impl MenuManager {
     pub fn new() -> Self {
-        Self { menus: Mutex::new(HashMap::new()), app_menu: Mutex::new(None) }
+        Self {
+            menus: Mutex::new(HashMap::new()),
+            app_menu: Mutex::new(None),
+            os_actions: Mutex::new(HashMap::new()),
+            os_bound: std::sync::atomic::AtomicBool::new(false),
+        }
     }
 
     pub fn create(&self, items: Vec<MenuItem>) -> Result<String, MenuError> {
@@ -120,6 +128,102 @@ impl Default for MenuManager {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Separator between menu id and action inside a muda `MenuId`.
+const ID_SEP: char = '\u{1f}';
+
+/// Build the real OS app menu (`NSMenu` on macOS, `HMENU` on Windows)
+/// from the registered `app_menu` tree. Must run on the main thread.
+/// The muda menu is intentionally leaked (process lifetime). Activations
+/// are routed to `menu.action { menuId, action }` — the same events the
+/// `menu.click` dispatch hook emits.
+///
+/// `hwnd` is the Win32 window handle for `init_for_hwnd`; `None` elsewhere.
+pub fn bind_os(
+    mgr: &std::sync::Arc<MenuManager>,
+    app: &std::sync::Arc<crate::app::AppManager>,
+    hwnd: Option<isize>,
+) {
+    use muda::{IsMenuItem, Menu, MenuId, MenuItem as OsItem, PredefinedMenuItem, Submenu};
+
+    let app_menu_id = mgr.app_menu();
+    let menu_id = match app_menu_id {
+        Some(id) => id,
+        None => return,
+    };
+    #[cfg(target_os = "windows")]
+    if hwnd.is_none() {
+        // The Win32 menu needs the window handle, which only exists after
+        // the first window is created. run_windowed re-calls bind_os then.
+        return;
+    }
+    #[cfg(not(target_os = "windows"))]
+    let _ = hwnd;
+    if mgr.os_bound.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let items = match mgr.menus.lock().unwrap().get(&menu_id).cloned() {
+        Some(items) => items,
+        None => return,
+    };
+
+    fn append_all(
+        menu_id: &str,
+        items: &[MenuItem],
+        actions: &mut HashMap<String, (String, String)>,
+        append: &dyn Fn(&dyn IsMenuItem),
+    ) {
+        for it in items {
+            if it.separator == Some(true) {
+                let sep = PredefinedMenuItem::separator();
+                append(&sep);
+                continue;
+            }
+            let label = it.label.clone().unwrap_or_default();
+            if let Some(children) = &it.items {
+                let sub = Submenu::new(label, it.enabled.unwrap_or(true));
+                append_all(menu_id, children, actions, &|kind| {
+                    let _ = sub.append(kind);
+                });
+                append(&sub);
+            } else {
+                let key = format!("{menu_id}{ID_SEP}{}", it.action.clone().unwrap_or_default());
+                actions
+                    .insert(key.clone(), (menu_id.to_string(), it.action.clone().unwrap_or_default()));
+                let item = OsItem::with_id(MenuId(key), label, it.enabled.unwrap_or(true), None);
+                append(&item);
+            }
+        }
+    }
+
+    let mut actions = HashMap::new();
+    let menu = Menu::new();
+    append_all(&menu_id, &items, &mut actions, &|kind| {
+        let _ = menu.append(kind);
+    });
+    *mgr.os_actions.lock().unwrap() = actions;
+    #[cfg(target_os = "macos")]
+    menu.init_for_nsapp();
+    #[cfg(target_os = "windows")]
+    if let Some(hwnd) = hwnd {
+        menu.init_for_hwnd(hwnd);
+    }
+    std::mem::forget(menu);
+
+    let mgr = mgr.clone();
+    let app = app.clone();
+    std::thread::spawn(move || {
+        let rx = muda::MenuEvent::receiver();
+        while let Ok(ev) = rx.recv() {
+            let key = ev.id.0;
+            if let Some((mid, action)) = mgr.os_actions.lock().unwrap().get(&key).cloned() {
+                if !action.is_empty() {
+                    app.emit("menu.action", serde_json::json!({ "menuId": mid, "action": action }));
+                }
+            }
+        }
+    });
 }
 
 #[cfg(test)]

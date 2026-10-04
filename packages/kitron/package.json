@@ -5,9 +5,20 @@
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "exports": { ".": { "types": "./dist/index.d.ts", "default": "./dist/index.js" } },
-  "files": ["dist"],
-  "scripts": { "build": "tsc -p tsconfig.json", "typecheck": "tsc --noEmit -p tsconfig.json", "clean": "rm -rf dist" },
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "clean": "rm -rf dist"
+  },
   "dependencies": {
     "@kitron/core": "0.1.0",
     "@kitron/window": "0.1.0",
@@ -20,7 +31,11 @@
     "@kitron/menu": "0.1.0",
     "@kitron/shortcut": "0.1.0",
     "@kitron/updater": "0.1.0",
-    "@kitron/node": "0.1.0"
+    "@kitron/crash": "0.1.0",
+    "@kitron/node": "0.1.0",
+    "@kitron/ui": "0.1.0"
   },
-  "devDependencies": { "typescript": "^5.6.3" }
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
 }

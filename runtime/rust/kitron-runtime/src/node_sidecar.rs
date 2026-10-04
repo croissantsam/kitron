@@ -153,7 +153,7 @@ impl NodeSidecar {
             .or_else(|| cfg.as_ref().map(|c| c.entry.clone()))
             .unwrap_or_else(|| "./backend/index.js".into());
         let new_args = args.or_else(|| cfg.as_ref().map(|c| c.args.clone())).unwrap_or_default();
-        let new_env = env.unwrap_or_default();
+        let new_env = env.or_else(|| cfg.as_ref().map(|c| c.env.clone())).unwrap_or_default();
         let cwd = cfg.and_then(|c| c.cwd.clone());
         self.start(new_entry, new_args, new_env, cwd).await
     }

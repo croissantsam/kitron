@@ -1,8 +1,8 @@
 # Kitron
 
-> Build desktop applications with React Native and TypeScript, powered by Node.js and native Rust infrastructure — without Chromium.
+> Build desktop applications with TypeScript, powered by Node.js and native Rust infrastructure — without Chromium, without React Native.
 
-React Native renders. TypeScript is the app language. Node.js provides filesystem/network/crypto. Rust owns windows, menus, tray, dialogs, shortcuts, updater, and OS integration. No Electron, no Chromium, no web renderer.
+Kitron UI renders (own retained renderer). TypeScript is the app language. Node.js provides filesystem/network/crypto. Rust owns windows, menus, tray, dialogs, shortcuts, updater, and OS integration. No Electron, no Chromium, no web renderer.
 
 ## Layout
 
@@ -47,4 +47,4 @@ node cli/dist/cli.js create my-app
 ## Rules (§45)
 
 - Never: Chromium, Electron, Vite-in-runtime, TanStack-in-runtime, business logic in Rust, blocking the UI thread, raw OS APIs to app devs.
-- Always: React Native for UI, TypeScript-first API, reuse Node.js, Rust for native, JSI/IPC typed + async, minimal runtime.
+- Always: Kitron UI for rendering, TypeScript-first API, reuse Node.js, Rust for native, typed async IPC, minimal runtime.

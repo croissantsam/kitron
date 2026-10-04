@@ -9,6 +9,8 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod permissions;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IpcRequest {
     pub id: u64,
@@ -164,6 +166,9 @@ pub struct KitronConfig {
     pub window: WindowDefaults,
     #[serde(default)]
     pub node: NodeConfig,
+    /// Granted sensitive domains (§23), e.g. `["shell", "process"]`.
+    #[serde(default)]
+    pub permissions: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

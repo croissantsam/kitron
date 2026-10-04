@@ -21,3 +21,11 @@ winit = { workspace = true }
 ed25519-dalek = { workspace = true }
 sha2 = { workspace = true }
 reqwest = { workspace = true }
+tray-icon = { workspace = true }
+muda = { workspace = true }
+global-hotkey = { workspace = true }
+image = { workspace = true }
+taffy = { workspace = true }
+softbuffer = { workspace = true }
+tiny-skia = { workspace = true }
+cosmic-text = { workspace = true }

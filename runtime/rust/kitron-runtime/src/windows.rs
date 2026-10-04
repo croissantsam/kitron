@@ -20,6 +20,7 @@ pub enum WindowError {
 
 pub struct WindowRecord {
     pub info: WindowInfo,
+    pub opts: WindowCreateOptions,
     // The live winit window. Kept so the OS window stays alive.
     // `None` in headless/test mode (no event loop yet).
     pub(crate) _handle: Option<Arc<WinitWindow>>,
@@ -75,7 +76,7 @@ impl WindowManager {
         };
         self.windows.lock().unwrap().insert(
             id,
-            WindowRecord { info: info.clone(), _handle: Some(handle) },
+            WindowRecord { info: info.clone(), opts: opts.clone(), _handle: Some(handle) },
         );
         info
     }
@@ -95,7 +96,7 @@ impl WindowManager {
             visible: opts.visible,
             focused: false,
         };
-        self.windows.lock().unwrap().insert(id, WindowRecord { info: info.clone(), _handle: None });
+        self.windows.lock().unwrap().insert(id, WindowRecord { info: info.clone(), opts: opts.clone(), _handle: None });
         info
     }
 
@@ -196,6 +197,34 @@ impl WindowManager {
                 h.set_title(&title);
             }
         })
+    }
+
+    /// Ask the OS window to repaint (best-effort; no-op headless).
+    pub fn redraw(&self, id: &str) {
+        if let Some(h) = self.windows.lock().unwrap().get(id).and_then(|r| r._handle.clone()) {
+            h.request_redraw();
+        }
+    }
+
+    /// Repaint every live window (used after UI mutations).
+    pub fn redraw_all(&self) {
+        let handles: Vec<Arc<WinitWindow>> =
+            self.windows.lock().unwrap().values().filter_map(|r| r._handle.clone()).collect();
+        for h in handles {
+            h.request_redraw();
+        }
+    }
+
+    /// Headless-registered windows with no live OS window yet. The event
+    /// loop drains this to open real windows on the main thread.
+    pub fn unbound(&self) -> Vec<(String, WindowCreateOptions)> {
+        self.windows
+            .lock()
+            .unwrap()
+            .iter()
+            .filter(|(_, r)| r._handle.is_none())
+            .map(|(id, r)| (id.clone(), r.opts.clone()))
+            .collect()
     }
 }
 

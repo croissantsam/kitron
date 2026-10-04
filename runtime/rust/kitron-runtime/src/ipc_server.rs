@@ -13,6 +13,7 @@ use crate::shortcuts::ShortcutManager;
 use crate::tray::TrayManager;
 use crate::windows::WindowManager;
 use kitron_core::{IpcRequest, IpcResponse, WindowCreateOptions};
+use kitron_core::permissions::Permissions;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -24,10 +25,18 @@ pub struct Runtime {
     pub trays: Arc<TrayManager>,
     pub menus: Arc<MenuManager>,
     pub shortcuts: Arc<ShortcutManager>,
+    pub permissions: Arc<Permissions>,
+    pub updater_state: Arc<crate::updater::UpdaterState>,
+    pub crashes: Arc<crate::crash::CrashStore>,
+    pub ui: Arc<crate::ui::UiManager>,
 }
 
 impl Runtime {
     pub fn new(app: Arc<AppManager>) -> Self {
+        Self::new_with_permissions(app, Permissions::empty())
+    }
+
+    pub fn new_with_permissions(app: Arc<AppManager>, permissions: Permissions) -> Self {
         Self {
             windows: Arc::new(WindowManager::new()),
             app,
@@ -36,11 +45,36 @@ impl Runtime {
             trays: Arc::new(TrayManager::new()),
             menus: Arc::new(MenuManager::new()),
             shortcuts: Arc::new(ShortcutManager::new()),
+            permissions: Arc::new(permissions),
+            updater_state: Arc::new(crate::updater::UpdaterState::new()),
+            crashes: Arc::new(crate::crash::CrashStore::new()),
+            ui: Arc::new(crate::ui::UiManager::new()),
         }
+    }
+
+    /// Build OS tray icons / app menu / hotkeys on the main thread.
+    /// Idempotent (managers carry once-guards); `hwnd` is the Win32 window
+    /// handle for `init_for_hwnd`, `None` elsewhere.
+    pub fn bind_os(&self, hwnd: Option<isize>) {
+        crate::tray::bind_os(&self.trays, &self.app);
+        crate::shortcuts::bind_os(&self.shortcuts, &self.app);
+        crate::menu::bind_os(&self.menus, &self.app, hwnd);
     }
 
     pub async fn dispatch(&self, req: IpcRequest) -> IpcResponse {
         let id = req.id;
+        // §23: sensitive domains require an explicit grant. No
+        // `native.executeAnything` escape hatch exists.
+        if !self.permissions.is_allowed(&req.domain) {
+            return IpcResponse::err(
+                id,
+                "PERMISSION_DENIED",
+                format!(
+                    "`{}` requires an explicit permission: add it to `permissions` in kitron.config or pass `--permissions {}` to the runtime",
+                    req.domain, req.domain
+                ),
+            );
+        }
         let p = req.params.clone();
         let get_str = |k: &str| p.get(k).and_then(|v| v.as_str()).map(|s| s.to_string());
         let get_u32 = |k: &str| p.get(k).and_then(|v| v.as_u64()).map(|v| v as u32);
@@ -85,6 +119,7 @@ impl Runtime {
                 // Headless registration; the winit event loop upgrades to a live
                 // window when running with a display (see kitron binary).
                 let info = self.windows.create_headless(opts);
+                crate::os_events::request_sync_windows();
                 IpcResponse::ok(id, serde_json::json!({ "id": info.id }))
             }
             ("window", "list") => {
@@ -100,7 +135,10 @@ impl Runtime {
             },
             ("window", "close") => match get_str("id") {
                 Some(wid) => match self.windows.close(&wid) {
-                    Ok(()) => IpcResponse::ok(id, serde_json::Value::Null),
+                    Ok(()) => {
+                        crate::os_events::request_sync_windows();
+                        IpcResponse::ok(id, serde_json::Value::Null)
+                    }
                     Err(e) => IpcResponse::err(id, "WINDOW_NOT_FOUND", e.to_string()),
                 },
                 None => IpcResponse::err(id, "KITRON_INVALID_PARAMS", "window.close: missing id"),
@@ -314,10 +352,13 @@ impl Runtime {
                 let icon = get_str("icon").unwrap_or_default();
                 let tooltip = get_str("tooltip");
                 match self.trays.create(icon, tooltip) {
-                    Ok(entry) => IpcResponse::ok(
-                        id,
-                        serde_json::json!({ "id": entry.id }),
-                    ),
+                    Ok(entry) => {
+                        crate::os_events::request_os_bind();
+                        IpcResponse::ok(
+                            id,
+                            serde_json::json!({ "id": entry.id }),
+                        )
+                    }
                     Err(e) => IpcResponse::err(id, "TRAY_CREATION_FAILED", e.to_string()),
                 }
             }
@@ -357,7 +398,10 @@ impl Runtime {
                     .unwrap_or(Ok(vec![]));
                 match items {
                     Ok(items) => match self.menus.create(items) {
-                        Ok(menu_id) => IpcResponse::ok(id, serde_json::json!({ "id": menu_id })),
+                        Ok(menu_id) => {
+                            crate::os_events::request_os_bind();
+                            IpcResponse::ok(id, serde_json::json!({ "id": menu_id }))
+                        }
                         Err(e) => IpcResponse::err(id, "MENU_CREATION_FAILED", e.to_string()),
                     },
                     Err(e) => IpcResponse::err(id, "KITRON_INVALID_PARAMS", format!("menu.create: bad items: {e}")),
@@ -365,7 +409,10 @@ impl Runtime {
             }
             ("menu", "setAppMenu") => match get_str("id") {
                 Some(mid) => match self.menus.set_app_menu(&mid) {
-                    Ok(()) => IpcResponse::ok(id, serde_json::Value::Null),
+                    Ok(()) => {
+                        crate::os_events::request_os_bind();
+                        IpcResponse::ok(id, serde_json::Value::Null)
+                    }
                     Err(e) => IpcResponse::err(id, "MENU_CREATION_FAILED", e.to_string()),
                 },
                 None => IpcResponse::err(id, "KITRON_INVALID_PARAMS", "menu.setAppMenu: missing id"),
@@ -386,6 +433,7 @@ impl Runtime {
             ("shortcut", "register") => match get_str("accelerator") {
                 Some(acc) => match self.shortcuts.register(&acc) {
                     Ok(key) => {
+                        crate::os_events::request_os_bind();
                         // Canonical key so JS `shortcut.CMD+K` events match.
                         IpcResponse::ok(id, serde_json::json!({ "accelerator": key }))
                     }
@@ -434,17 +482,242 @@ impl Runtime {
                     Err(e) => IpcResponse::err(id, "UPDATE_SIGNATURE_INVALID", e),
                 }
             }
-            ("updater", "installAndRestart") => IpcResponse::err(
-                id,
-                "KITRON_NOT_IMPLEMENTED",
-                "updater.installAndRestart: download/install pipeline is Phase 4 (check + verify are available)",
-            ),
+            ("updater", "installAndRestart") => {
+                match self.updater_state.take_for_restart().await {
+                    Some(staged) => {
+                        // Swap already happened at `install` time. Spawn the
+                        // new image and exit — the OS delivers the restart.
+                        // NOTE: never covered by tests (it exits the process).
+                        let exe = std::env::current_exe()
+                            .map_err(|e| format!("UPDATE_CHECK_FAILED: {e}"));
+                        match exe {
+                            Ok(exe) => {
+                                match std::process::Command::new(exe).spawn() {
+                                    Ok(_) => {
+                                        tracing::info!(version = ?staged.version, "update installed, restarting");
+                                        std::process::exit(0);
+                                    }
+                                    Err(e) => IpcResponse::err(id, "UPDATE_CHECK_FAILED", format!("restart failed: {e}")),
+                                }
+                            }
+                            Err(e) => IpcResponse::err(id, "UPDATE_CHECK_FAILED", e),
+                        }
+                    }
+                    None => IpcResponse::err(
+                        id,
+                        "UPDATE_NOT_STAGED",
+                        "nothing installed: run updater.download + updater.install first",
+                    ),
+                }
+            }
+            ("updater", "download") => {
+                let url = get_str("url").or_else(|| get_str("feedUrl")).unwrap_or_default();
+                let version = get_str("version").unwrap_or_else(|| "unknown".into());
+                if url.is_empty() {
+                    IpcResponse::err(id, "KITRON_INVALID_PARAMS", "updater.download: need url")
+                } else {
+                    match crate::updater::download(&url, &version).await {
+                        Ok(path) => {
+                            self.updater_state.set_downloaded(path.clone(), version.clone()).await;
+                            IpcResponse::ok(id, serde_json::json!({ "path": path, "version": version }))
+                        }
+                        Err(e) => IpcResponse::err(id, "UPDATE_DOWNLOAD_FAILED", e),
+                    }
+                }
+            }
+            ("updater", "install") => {
+                let sig = get_str("signature").unwrap_or_default();
+                let key = get_str("publicKey").or_else(|| get_str("pubkey")).unwrap_or_default();
+                let path = get_str("path").map(std::path::PathBuf::from);
+                let staged = self.updater_state.staged_path().await;
+                let target = path.or(staged);
+                match target {
+                    Some(target) if !sig.is_empty() && !key.is_empty() => {
+                        match crate::updater::install(&target, &sig, &key).await {
+                            Ok(backup) => {
+                                self.updater_state.set_verified(sig, key, backup.clone()).await;
+                                IpcResponse::ok(id, serde_json::json!({ "backup": backup }))
+                            }
+                            Err(e) => {
+                                // Signature failures keep their code; IO errors surface raw.
+                                if e == "UPDATE_SIGNATURE_INVALID" || e.starts_with("UPDATE_SIGNATURE_INVALID") {
+                                    IpcResponse::err(id, "UPDATE_SIGNATURE_INVALID", e)
+                                } else {
+                                    IpcResponse::err(id, "UPDATE_CHECK_FAILED", e)
+                                }
+                            }
+                        }
+                    }
+                    Some(_) => IpcResponse::err(id, "KITRON_INVALID_PARAMS", "updater.install: need signature + publicKey"),
+                    None => IpcResponse::err(id, "UPDATE_NOT_STAGED", "nothing downloaded: run updater.download first"),
+                }
+            }
+            // ---- own UI renderer (no RN, no webview) ----
+            ("ui", "create") => {
+                let nid = get_str("id").unwrap_or_default();
+                let kind: Result<crate::ui::UiKind, _> =
+                    serde_json::from_value(p.get("kind").cloned().unwrap_or(serde_json::Value::Null));
+                let props: crate::ui::UiProps =
+                    serde_json::from_value(p.get("props").cloned().unwrap_or(serde_json::json!({}))).unwrap_or_default();
+                let style: crate::ui::UiStyle =
+                    serde_json::from_value(p.get("style").cloned().unwrap_or(serde_json::json!({}))).unwrap_or_default();
+                match (nid.is_empty(), kind) {
+                    (false, Ok(kind)) => match self.ui.create(nid, kind, props, style) {
+                        Ok(()) => {
+                            self.windows.redraw_all();
+                            IpcResponse::ok(id, serde_json::Value::Null)
+                        }
+                        Err(e) => IpcResponse::err(id, ui_code(&e), e.to_string()),
+                    },
+                    _ => IpcResponse::err(id, "KITRON_INVALID_PARAMS", "ui.create: need id + kind(view|text|button|input)"),
+                }
+            }
+            ("ui", "setProps") => match get_str("id") {
+                Some(nid) => {
+                    let props: crate::ui::UiProps =
+                        serde_json::from_value(p.get("props").cloned().unwrap_or(serde_json::json!({}))).unwrap_or_default();
+                    match self.ui.set_props(&nid, props) {
+                        Ok(()) => {
+                            self.windows.redraw_all();
+                            IpcResponse::ok(id, serde_json::Value::Null)
+                        }
+                        Err(e) => IpcResponse::err(id, ui_code(&e), e.to_string()),
+                    }
+                }
+                None => IpcResponse::err(id, "KITRON_INVALID_PARAMS", "ui.setProps: need id"),
+            },
+            ("ui", "setStyle") => match get_str("id") {
+                Some(nid) => {
+                    let style: crate::ui::UiStyle =
+                        serde_json::from_value(p.get("style").cloned().unwrap_or(serde_json::json!({}))).unwrap_or_default();
+                    match self.ui.set_style(&nid, style) {
+                        Ok(()) => {
+                            self.windows.redraw_all();
+                            IpcResponse::ok(id, serde_json::Value::Null)
+                        }
+                        Err(e) => IpcResponse::err(id, ui_code(&e), e.to_string()),
+                    }
+                }
+                None => IpcResponse::err(id, "KITRON_INVALID_PARAMS", "ui.setStyle: need id"),
+            },
+            ("ui", "append") => {
+                let parent = get_str("parent").unwrap_or_default();
+                let child = get_str("child").unwrap_or_default();
+                let index = p.get("index").and_then(|v| v.as_u64()).map(|v| v as usize);
+                if parent.is_empty() || child.is_empty() {
+                    IpcResponse::err(id, "KITRON_INVALID_PARAMS", "ui.append: need parent + child")
+                } else {
+                    match self.ui.append(&parent, &child, index) {
+                        Ok(()) => {
+                            self.windows.redraw_all();
+                            IpcResponse::ok(id, serde_json::Value::Null)
+                        }
+                        Err(e) => IpcResponse::err(id, ui_code(&e), e.to_string()),
+                    }
+                }
+            }
+            ("ui", "remove") => match get_str("id") {
+                Some(nid) => match self.ui.remove(&nid) {
+                    Ok(()) => {
+                        self.windows.redraw_all();
+                        IpcResponse::ok(id, serde_json::Value::Null)
+                    }
+                    Err(e) => IpcResponse::err(id, ui_code(&e), e.to_string()),
+                },
+                None => IpcResponse::err(id, "KITRON_INVALID_PARAMS", "ui.remove: need id"),
+            },
+            ("ui", "setRoot") => {
+                let win = get_str("window").unwrap_or_default();
+                let root = get_str("root").unwrap_or_default();
+                if win.is_empty() || root.is_empty() {
+                    IpcResponse::err(id, "KITRON_INVALID_PARAMS", "ui.setRoot: need window + root")
+                } else {
+                    match self.ui.set_root(&win, &root) {
+                        Ok(()) => {
+                            self.windows.redraw(&win);
+                            IpcResponse::ok(id, serde_json::Value::Null)
+                        }
+                        Err(e) => IpcResponse::err(id, ui_code(&e), e.to_string()),
+                    }
+                }
+            }
+            ("ui", "clearRoot") => {
+                let win = get_str("window").unwrap_or_default();
+                if win.is_empty() {
+                    IpcResponse::err(id, "KITRON_INVALID_PARAMS", "ui.clearRoot: need window")
+                } else {
+                    self.ui.clear_root(&win);
+                    self.windows.redraw(&win);
+                    IpcResponse::ok(id, serde_json::Value::Null)
+                }
+            }
+            ("ui", "layout") => {
+                let win = get_str("window").unwrap_or_default();
+                let w = p.get("width").and_then(|v| v.as_f64()).unwrap_or(800.0) as f32;
+                let h = p.get("height").and_then(|v| v.as_f64()).unwrap_or(600.0) as f32;
+                if win.is_empty() {
+                    IpcResponse::err(id, "KITRON_INVALID_PARAMS", "ui.layout: need window")
+                } else {
+                    match self.ui.layout(&win, w, h) {
+                        Ok(placed) => IpcResponse::ok(id, serde_json::to_value(placed).unwrap()),
+                        Err(e) => IpcResponse::err(id, ui_code(&e), e.to_string()),
+                    }
+                }
+            }
+            ("ui", "press") => {
+                // Test/OS hook: press at window coordinates (the event loop
+                // calls the same path for real mouse input).
+                let win = get_str("window").unwrap_or_default();
+                let (x, y) = (
+                    p.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                    p.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0) as f32,
+                );
+                let (w, h) = (
+                    p.get("width").and_then(|v| v.as_f64()).unwrap_or(800.0) as f32,
+                    p.get("height").and_then(|v| v.as_f64()).unwrap_or(600.0) as f32,
+                );
+                match self.ui.press_at(&win, x, y, w, h) {
+                    Ok(Some(btn)) => {
+                        self.app.emit("ui.press", serde_json::json!({ "windowId": win, "nodeId": btn }));
+                        self.windows.redraw(&win);
+                        IpcResponse::ok(id, serde_json::json!({ "nodeId": btn }))
+                    }
+                    Ok(None) => {
+                        self.windows.redraw(&win);
+                        IpcResponse::ok(id, serde_json::Value::Null)
+                    }
+                    Err(e) => IpcResponse::err(id, ui_code(&e), e.to_string()),
+                }
+            }
+            // ---- crash reports ----
+            ("crash", "list") => match self.crashes.list() {
+                Ok(reports) => IpcResponse::ok(id, serde_json::to_value(reports).unwrap()),
+                Err(e) => IpcResponse::err(id, "CRASH_NOT_FOUND", e),
+            },
+            ("crash", "get") => match get_str("id") {
+                Some(cid) => match self.crashes.get(&cid) {
+                    Ok(r) => IpcResponse::ok(id, serde_json::to_value(r).unwrap()),
+                    Err(e) => IpcResponse::err(id, "CRASH_NOT_FOUND", e),
+                },
+                None => IpcResponse::err(id, "KITRON_INVALID_PARAMS", "crash.get: missing id"),
+            },
+            ("crash", "clear") => match self.crashes.clear() {
+                Ok(n) => IpcResponse::ok(id, serde_json::json!({ "cleared": n })),
+                Err(e) => IpcResponse::err(id, "CRASH_NOT_FOUND", e),
+            },
             _ => IpcResponse::err(
                 id,
                 "KITRON_NOT_IMPLEMENTED",
                 format!("unknown {}.{}", req.domain, req.method),
             ),
         }
+    }
+}
+
+fn ui_code(e: &crate::ui::UiError) -> &'static str {
+    match e {
+        crate::ui::UiError::NotFound(_) | crate::ui::UiError::NoRoot(_) => "UI_NOT_FOUND",
+        crate::ui::UiError::Invalid(_) => "KITRON_INVALID_PARAMS",
     }
 }
 
@@ -460,6 +733,14 @@ mod tests {
     fn runtime() -> Runtime {
         let (app, _rx) = AppManager::new();
         Runtime::new(Arc::new(app))
+    }
+
+    fn runtime_with(grants: &[&str]) -> Runtime {
+        let (app, _rx) = AppManager::new();
+        Runtime::new_with_permissions(
+            Arc::new(app),
+            kitron_core::permissions::Permissions::new(grants.iter().map(|s| s.to_string())),
+        )
     }
 
     fn ok_value(r: IpcResponse) -> serde_json::Value {
@@ -596,7 +877,12 @@ mod tests {
         );
         assert_eq!(
             err_code(rt.dispatch(req("updater", "installAndRestart", serde_json::json!({}))).await),
-            "KITRON_NOT_IMPLEMENTED"
+            "UPDATE_NOT_STAGED"
+        );
+        // Install without credentials is a param error, not a signature error.
+        assert_eq!(
+            err_code(rt.dispatch(req("updater", "install", serde_json::json!({}))).await),
+            "UPDATE_NOT_STAGED"
         );
     }
 
@@ -616,8 +902,51 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn crash_store_dispatch() {
+        let rt = runtime();
+        // list returns an array (contents depend on parallel tests sharing
+        // the on-disk store — assert shape, not contents).
+        let v = ok_value(rt.dispatch(req("crash", "list", serde_json::json!({}))).await);
+        assert!(v.is_array());
+        assert_eq!(
+            err_code(rt.dispatch(req("crash", "get", serde_json::json!({ "id": "kitron-test-nope" }))).await),
+            "CRASH_NOT_FOUND"
+        );
+        assert_eq!(
+            err_code(rt.dispatch(req("crash", "get", serde_json::json!({ "id": "../evil" }))).await),
+            "CRASH_NOT_FOUND"
+        );
+    }
+
+    #[tokio::test]
     async fn unknown_domain_is_typed_not_implemented() {
         let rt = runtime();
         assert_eq!(err_code(rt.dispatch(req("nope", "nope", serde_json::json!({}))).await), "KITRON_NOT_IMPLEMENTED");
+    }
+
+    #[tokio::test]
+    async fn sensitive_domains_require_grants() {
+        let rt = runtime();
+        // Secure default: shell + process denied.
+        assert_eq!(
+            err_code(rt.dispatch(req("shell", "openExternal", serde_json::json!({ "url": "https://x.com" }))).await),
+            "PERMISSION_DENIED"
+        );
+        assert_eq!(
+            err_code(rt.dispatch(req("process", "spawn", serde_json::json!({ "command": "true" }))).await),
+            "PERMISSION_DENIED"
+        );
+        // Granted: request reaches the handler (bad scheme → handler error,
+        // proving it passed the permission gate).
+        let rt = runtime_with(&["shell"]);
+        assert_eq!(
+            err_code(rt.dispatch(req("shell", "openExternal", serde_json::json!({ "url": "notaurl" }))).await),
+            "SHELL_OPEN_FAILED"
+        );
+        // Other sensitive domain still denied.
+        assert_eq!(
+            err_code(rt.dispatch(req("process", "spawn", serde_json::json!({ "command": "true" }))).await),
+            "PERMISSION_DENIED"
+        );
     }
 }
