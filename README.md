@@ -94,3 +94,22 @@ wry 0.6 (fenêtre native sous Win/Linux), soit une intégration event-loop
 lourde (menus/tray hors macOS), soit une niche (TouchBar). La règle reste :
 Node.js quand Node.js suffit, Rust uniquement pour l'accès OS — sans
 dupliquer les moteurs (jamais de Chromium embarqué).
+
+## Benchmark Kitron vs Electron (mesuré, même machine)
+
+Machine : darwin-arm64, Electron v44.5.1, Kitron host (wry 0.6/WKWebView).
+Même contenu (h1 + ping), `file://` local, 1200×800, RSS après 3 s idle,
+IPC = moyenne de 200 invokes renderer séquentiels (×3 runs).
+
+| Metric | Electron | Kitron |
+|---|---|---|
+| Time to loaded | 394 ms | 330 ms |
+| Idle RSS (spawned tree) | 368 MB (4 procs) | 101 MB (1 proc) |
+| Native shell size | 307 MB (Chromium bundled) | 6 MB (system WebView, no Chromium) |
+| Renderer IPC round-trip | 0.329 ms | 0.095 ms |
+
+Caveats : le RSS Kitron exclut les processus WebKit partagés de l'OS ;
+Electron inclut ses propres helpers. Aucun backend Node des deux côtés ;
+la prod Kitron embarquera Node (~90 Mo), Electron l'inclut déjà ci-dessus.
+Re-run : `node benchmarks/compare/bench.mjs` (voir `benchmarks/compare/`
+pour le protocole exact).

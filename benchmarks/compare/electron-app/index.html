@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="en">
+  <head><meta charset="utf-8" /><title>Bench</title></head>
+  <body>
+    <main style="font-family: system-ui; padding: 32px">
+      <h1>Hello Bench</h1>
+      <p>ping → <span id="pong">…</span></p>
+    </main>
+    <script>
+      (async () => {
+        try {
+          const pong = await window.bench.invoke("ping");
+          document.getElementById("pong").textContent = pong;
+        } catch (e) {
+          document.getElementById("pong").textContent = "offline";
+        }
+      })();
+    </script>
+  </body>
+</html>

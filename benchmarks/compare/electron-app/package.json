@@ -1,0 +1,10 @@
+{
+  "name": "kitron-electron-bench",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron ."
+  }
+}
