@@ -54,8 +54,7 @@ enum Cmd {
     },
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .init();
@@ -64,7 +63,7 @@ async fn main() -> anyhow::Result<()> {
     kitron_runtime::crash::init(env!("CARGO_PKG_VERSION").to_string());
     match cli.cmd {
         Cmd::Run { app_dir, headless, title, size, permissions, socket } => {
-            run(app_dir, headless, title, size, permissions, socket).await?;
+            run(app_dir, headless, title, size, permissions, socket)?;
         }
     }
     Ok(())
@@ -74,32 +73,43 @@ mod anyhow {
     pub type Result<T> = std::result::Result<T, Box<dyn std::error::Error + Send + Sync>>;
 }
 
-async fn run(
+/// AppKit requires the winit event loop on the MAIN thread, so `run` splits
+/// in two: host tasks (stdio/socket IPC, Node sidecar) live on a Tokio
+/// worker thread, and `run_windowed` owns the main thread below.
+fn run(
     app_dir: String,
     headless: bool,
-    title: Option<String>,
-    size: Option<String>,
+    _title: Option<String>,
+    _size: Option<String>,
     permissions: Option<String>,
     socket: Option<String>,
 ) -> anyhow::Result<()> {
+    let tokio_rt = tokio::runtime::Builder::new_multi_thread().enable_all().build()?;
     let (app, _rx) = AppManager::new();
     let app = Arc::new(app);
     let perms = kitron_core::permissions::Permissions::parse_flag(permissions.as_deref());
     let rt = Arc::new(Runtime::new_with_permissions(app.clone(), perms));
     app.ready();
+    eprintln!("[kitron] runtime up (headless={headless})");
 
-    let (mut w, mut h) = (1200u32, 800u32);
-    if let Some(s) = size {
-        if let Some((a, b)) = s.split_once('x') {
-            if let (Ok(a), Ok(b)) = (a.parse(), b.parse()) {
-                w = a;
-                h = b;
-            }
-        }
+    let rt_host = rt.clone();
+    let host = std::thread::spawn(move || tokio_rt.block_on(run_host(rt_host, app_dir, socket)));
+
+    if headless {
+        // Park the main thread here too; Ctrl+C ends run_host above.
+        host.join().map_err(|_| "host thread panicked")??;
+        return Ok(());
     }
-    let title = title.unwrap_or_else(|| "Kitron App".into());
 
-    // Spawn the stdio IPC loop on a background task — never blocks the UI thread.
+    run_windowed(rt)?;
+    // Event loop exited: tear everything down.
+    std::process::exit(0);
+}
+
+/// stdio + socket IPC and the Node sidecar. Runs on a Tokio worker thread;
+/// parks forever (windowed) or until Ctrl+C (headless).
+async fn run_host(rt: Arc<Runtime>, app_dir: String, socket: Option<String>) -> anyhow::Result<()> {
+    // stdio IPC loop — never blocks the UI thread.
     let rt_ipc = rt.clone();
     tokio::spawn(async move {
         if let Err(e) = stdio_loop(rt_ipc).await {
@@ -130,18 +140,11 @@ async fn run(
         });
     }
 
-    if headless {
-        tracing::info!("kitron-runtime headless: serving IPC on stdio");
-        // Park until killed; IPC runs on the background task.
-        tokio::signal::ctrl_c().await.ok();
-        return Ok(());
-    }
-
-    run_windowed(rt, title, w, h)?;
+    tokio::signal::ctrl_c().await.ok();
     Ok(())
 }
 
-fn run_windowed(rt: Arc<Runtime>, title: String, w: u32, h: u32) -> anyhow::Result<()> {
+fn run_windowed(rt: Arc<Runtime>) -> anyhow::Result<()> {
     use kitron_runtime::os_events::KitronUserEvent;
     use winit::event::{ElementState, Event, MouseButton, WindowEvent};
     use winit::event_loop::{ControlFlow, EventLoop};
@@ -156,7 +159,6 @@ fn run_windowed(rt: Arc<Runtime>, title: String, w: u32, h: u32) -> anyhow::Resu
 
     let event_loop = EventLoop::<KitronUserEvent>::with_user_event().build()?;
     kitron_runtime::os_events::set_proxy(event_loop.create_proxy());
-    let _ = (title, w, h); // kept for --title/--size parity; windows come from window.create
     let mut windows: std::collections::HashMap<winit::window::WindowId, LiveWindow> =
         std::collections::HashMap::new();
     #[allow(unused_mut)]
@@ -169,7 +171,11 @@ fn run_windowed(rt: Arc<Runtime>, title: String, w: u32, h: u32) -> anyhow::Resu
                         elwt: &winit::event_loop::ActiveEventLoop,
                         first_hwnd: &mut Option<isize>| {
         windows.retain(|_, lw| rt.windows.get(&lw.kitron_id).is_ok());
-        for (kid, opts) in rt.windows.unbound() {
+        let pending = rt.windows.unbound();
+        if !pending.is_empty() {
+            eprintln!("[kitron] sync_windows: opening {} window(s)", pending.len());
+        }
+        for (kid, opts) in pending {
             let mut attrs = winit::window::WindowAttributes::default()
                 .with_title(opts.title.clone())
                 .with_inner_size(winit::dpi::LogicalSize::new(opts.width, opts.height))
@@ -212,7 +218,10 @@ fn run_windowed(rt: Arc<Runtime>, title: String, w: u32, h: u32) -> anyhow::Resu
     };
 
     // Paint one window with its Kitron UI tree (no-op without a ui root).
-    let paint_window = |rt: &Arc<Runtime>, lw: &mut LiveWindow| {
+    // KITRON_NO_PAINT=1 exercises layout + pixmap paint but skips the
+    // softbuffer present (diagnostic: isolates display-driver crashes).
+    let no_paint = std::env::var("KITRON_NO_PAINT").is_ok();
+    let paint_window = move |rt: &Arc<Runtime>, lw: &mut LiveWindow| {
         let size = lw.handle.inner_size();
         if size.width == 0 || size.height == 0 {
             return;
@@ -224,6 +233,9 @@ fn run_windowed(rt: Arc<Runtime>, title: String, w: u32, h: u32) -> anyhow::Resu
         match rt.ui.paint_window(&lw.kitron_id, size.width as f32, size.height as f32, &mut pixmap) {
             Ok(()) => {}
             Err(_) => return, // NoRoot: leave the window blank.
+        }
+        if no_paint {
+            return;
         }
         if lw.surface.is_none() {
             match softbuffer::Context::new(lw.handle.clone()) {
@@ -401,6 +413,7 @@ async fn socket_loop(rt: Arc<Runtime>, path: String) -> anyhow::Result<()> {
     use tokio::net::UnixListener;
     let _ = std::fs::remove_file(&path); // stale socket from a previous run
     let listener = UnixListener::bind(&path)?;
+    eprintln!("[kitron] IPC socket listening on {path}");
     tracing::info!(socket = %path, "IPC socket listening");
     loop {
         let (stream, _) = listener.accept().await?;
@@ -415,7 +428,7 @@ async fn socket_loop(rt: Arc<Runtime>, path: String) -> anyhow::Result<()> {
 
 #[cfg(unix)]
 async fn serve_stream(rt: Arc<Runtime>, stream: tokio::net::UnixStream) -> anyhow::Result<()> {
-    let (rh, mut wh) = tokio::io::split(stream);
+    let (rh, wh) = tokio::io::split(stream);
     let mut reader = BufReader::new(rh).lines();
     // Native events fan out to every connected client.
     let mut rx = rt.app.subscribe();

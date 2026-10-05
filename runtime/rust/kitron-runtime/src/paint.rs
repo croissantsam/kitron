@@ -117,29 +117,30 @@ impl<'a> Painter<'a> {
             || matches!(item.kind, UiKind::Button | UiKind::TextInput);
         if draws_bg {
             let bg = item.background.clone().unwrap_or_else(|| "#e8e8e8".into());
-            let path = rounded_rect(x, y, item.width, item.height, item.border_radius);
-            let mut paint = tiny_skia::Paint::default();
-            paint.set_color(parse_color(&bg));
-            paint.anti_alias = true;
-            pixmap.fill_path(
-                &path,
-                &paint,
-                tiny_skia::FillRule::Winding,
-                tiny_skia::Transform::identity(),
-                None,
-            );
-            // Focused input: blue outline.
-            if item.focused {
-                let mut stroke = tiny_skia::Paint::default();
-                stroke.set_color(parse_color("#0a84ff"));
-                stroke.anti_alias = true;
-                pixmap.stroke_path(
+            if let Some(path) = rounded_rect(x, y, item.width, item.height, item.border_radius) {
+                let mut paint = tiny_skia::Paint::default();
+                paint.set_color(parse_color(&bg));
+                paint.anti_alias = true;
+                pixmap.fill_path(
                     &path,
-                    &stroke,
-                    &tiny_skia::Stroke { width: 2.0, ..Default::default() },
+                    &paint,
+                    tiny_skia::FillRule::Winding,
                     tiny_skia::Transform::identity(),
                     None,
                 );
+                // Focused input: blue outline.
+                if item.focused {
+                    let mut stroke = tiny_skia::Paint::default();
+                    stroke.set_color(parse_color("#0a84ff"));
+                    stroke.anti_alias = true;
+                    pixmap.stroke_path(
+                        &path,
+                        &stroke,
+                        &tiny_skia::Stroke { width: 2.0, ..Default::default() },
+                        tiny_skia::Transform::identity(),
+                        None,
+                    );
+                }
             }
         }
         // Images paint their pixels (scaled to the node box).
@@ -368,12 +369,15 @@ fn blit_glyph(
     }
 }
 
-fn rounded_rect(x: f32, y: f32, w: f32, h: f32, r: f32) -> tiny_skia::Path {
+fn rounded_rect(x: f32, y: f32, w: f32, h: f32, r: f32) -> Option<tiny_skia::Path> {
+    if !(x.is_finite() && y.is_finite() && w > 0.0 && h > 0.0) {
+        return None;
+    }
     let r = r.min(w / 2.0).min(h / 2.0).max(0.0);
     let mut pb = tiny_skia::PathBuilder::new();
     if r <= 0.5 {
-        pb.push_rect(tiny_skia::Rect::from_xywh(x, y, w, h).unwrap());
-        return pb.finish().unwrap();
+        pb.push_rect(tiny_skia::Rect::from_xywh(x, y, w, h)?);
+        return pb.finish();
     }
     // Rounded rect from lines + quadratic corners.
     pb.move_to(x + r, y);
@@ -386,7 +390,7 @@ fn rounded_rect(x: f32, y: f32, w: f32, h: f32, r: f32) -> tiny_skia::Path {
     pb.line_to(x, y + r);
     pb.quad_to(x, y, x + r, y);
     pb.close();
-    pb.finish().unwrap()
+    pb.finish()
 }
 
 #[cfg(test)]
