@@ -143,6 +143,9 @@ pub struct PlacedNode {
     pub scrollable: bool,
 }
 
+/// Inner padding applied around leaf text (measured AND painted).
+pub const TEXT_PAD: f32 = 8.0;
+
 #[derive(Debug, thiserror::Error)]
 pub enum UiError {
     #[error("ui node not found: {0}")]
@@ -390,16 +393,17 @@ impl UiManager {
                 }
             }
         }
-        // Text leaves are pre-measured (single pass, viewport-bounded).
+        // Text leaves are pre-measured (single pass, viewport-bounded) plus
+        // padding, so painting with the same pad never wraps.
         let is_leaf = !matches!(n.kind, UiKind::View | UiKind::Image);
         if is_leaf {
             let label = display_text(n);
             let size = measure_text(fonts, &label, font_size_of(n), viewport_w);
             if n.style.width.is_none() {
-                style.size.width = taffy::Dimension::length(size.0.max(1.0));
+                style.size.width = taffy::Dimension::length(size.0.max(1.0) + TEXT_PAD * 2.0);
             }
             if n.style.height.is_none() {
-                style.size.height = taffy::Dimension::length(size.1.max(1.0));
+                style.size.height = taffy::Dimension::length(size.1.max(1.0) + TEXT_PAD * 2.0);
             }
         }
         // Scroll containers anchor content at the start (ScrollView semantics).
@@ -527,7 +531,9 @@ impl UiManager {
             .iter()
             .filter_map(|(id, n)| n.image.clone().map(|img| (id.clone(), img)))
             .collect();
-        crate::paint::Painter::new(&mut fonts, scale).paint(pixmap, &placed, &images);
+        let mut painter = crate::paint::Painter::new(&mut fonts, scale);
+        painter.set_wrap_width(vw);
+        painter.paint(pixmap, &placed, &images);
         Ok(())
     }
     /// Topmost interactive node at a point (buttons + inputs win over views).
@@ -1062,6 +1068,49 @@ mod tests {
         // Unknown keys are ignored, never an error.
         m.patch_props("t", &serde_json::json!({ "nope": 1 })).unwrap();
         m.patch_style("root", &serde_json::json!({ "gap": 4 })).unwrap();
+    }
+
+    #[test]
+    fn stacked_texts_never_overlap() {
+        // Regression: paint must wrap lines exactly where measure did.
+        // Painting with a narrower bound re-wraps and spills lines onto
+        // siblings (the "pile" bug).
+        use std::collections::HashMap;
+        let m = mgr();
+        m.create("root".into(), UiKind::View, UiProps::default(), UiStyle {
+            flex: Some(1.0), ..Default::default()
+        }).unwrap();
+        m.create("t1".into(), UiKind::Text,
+            UiProps { text: "Hello Kitron".into(), font_size: Some(28.0), ..Default::default() },
+            UiStyle::default()).unwrap();
+        m.create("t2".into(), UiKind::Text,
+            UiProps { text: "Clicked 0 times".into(), font_size: Some(14.0), ..Default::default() },
+            UiStyle::default()).unwrap();
+        m.append("root", "t1", None).unwrap();
+        m.append("root", "t2", None).unwrap();
+        m.set_root("win", "root").unwrap();
+        let placed = m.layout("win", 600.0, 400.0).unwrap();
+        let (t1, t2) = (
+            placed.iter().find(|p| p.id == "t1").unwrap().clone(),
+            placed.iter().find(|p| p.id == "t2").unwrap().clone(),
+        );
+        assert!(t1.y + t1.height <= t2.y + 1.0, "layout overlap: {t1:?} {t2:?}");
+        let mut pixmap = tiny_skia::Pixmap::new(1200, 800).unwrap();
+        m.paint_window("win", 600.0, 400.0, &mut pixmap, 2.0).unwrap();
+        // Gap rows between the siblings (physical px) must stay blank.
+        let gap0 = ((t1.y + t1.height) * 2.0) as u32;
+        let gap1 = ((t2.y * 2.0) as u32).saturating_sub(2);
+        let cx = ((t1.x + t1.width / 2.0) * 2.0) as u32;
+        for y in gap0..gap1 {
+            for x in cx.saturating_sub(40)..cx + 40 {
+                let px = pixmap.pixel(x.min(1199), y.min(799)).unwrap();
+                assert!(
+                    !(px.red() < 100 && px.green() < 100 && px.blue() < 100),
+                    "ink in sibling gap at {x},{y}"
+                );
+            }
+        }
+        let _ = HashMap::<String, String>::new();
     }
 
     #[test]

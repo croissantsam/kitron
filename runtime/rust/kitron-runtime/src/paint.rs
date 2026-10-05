@@ -30,11 +30,18 @@ pub struct Painter<'a> {
     fonts: &'a mut cosmic_text::FontSystem,
     cache: cosmic_text::SwashCache,
     scale: f32,
+    /// Wrap width shared with measurement (viewport-bounded): paint must
+    /// break lines exactly where measure did, or lines overlap siblings.
+    wrap_w: f32,
 }
 
 impl<'a> Painter<'a> {
     pub fn new(fonts: &'a mut cosmic_text::FontSystem, scale: f32) -> Self {
-        Self { fonts, cache: cosmic_text::SwashCache::new(), scale: scale.max(1.0) }
+        Self { fonts, cache: cosmic_text::SwashCache::new(), scale: scale.max(1.0), wrap_w: 1.0e9 }
+    }
+
+    pub fn set_wrap_width(&mut self, w: f32) {
+        self.wrap_w = w.max(1.0);
     }
 
     fn px(&self, v: f32) -> f32 {
@@ -163,16 +170,18 @@ impl<'a> Painter<'a> {
             return;
         }
         if !item.text.is_empty() {
-            let pad = 8.0 * s_;
+            let pad = crate::ui::TEXT_PAD * s_;
             // Layout in logical px, rasterize at display scale.
             let lx = (item.x + ox) * s_;
             let ly = (item.y + oy) * s_;
+            // Same wrap bound as measurement: box always fits, never re-wraps.
+            let wrap = self.wrap_w;
             self.paint_text(
                 pixmap,
                 &item.text,
                 lx + pad,
                 ly + pad,
-                (item.width - 8.0 * 2.0).max(1.0),
+                wrap,
                 item.font_size,
                 &item.color,
             );
