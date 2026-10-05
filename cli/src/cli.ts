@@ -65,7 +65,7 @@ async function cmdCreate(args: string[]): Promise<void> {
   const pkg = {
     name, version: "0.1.0", private: true, type: "module",
     scripts: { dev: "kitron dev", build: "kitron build" },
-    dependencies: { kitron: "0.1.0", "@kitron/window": "0.1.0", "@kitron/core": "0.1.0", "@kitron/react": "0.1.0", react: "^19.3.0" },
+    dependencies: await kitronDeps(dest),
   };
   await fs.writeFile(path.join(dest, "package.json"), JSON.stringify(pkg, null, 2));
   await fs.writeFile(path.join(dest, "kitron.config.ts"), TEMPLATE_CONFIG(name));
@@ -74,6 +74,32 @@ async function cmdCreate(args: string[]): Promise<void> {
   await fs.writeFile(path.join(dest, "backend", "index.ts"), TEMPLATE_BACKEND);
   await fs.writeFile(path.join(dest, "README.md"), `# ${name}\n\nCreated with \`kitron create\`.\n\n\`\`\`bash\nkitron dev\n\`\`\`\n`);
   console.log(`created ${dest}\n  cd ${name}\n  kitron dev`);
+}
+
+/**
+ * @kitron/* deps for a new app. Against a local Kitron checkout (the usual
+ * `npm link` dev setup) we emit `file:` deps so `npm install` works before
+ * anything is published; from an installed CLI we use version ranges.
+ */
+async function kitronDeps(appDir: string): Promise<Record<string, string>> {
+  const repoRoot = path.resolve(__dirname, "..", "..");
+  const names = ["kitron", "@kitron/core", "@kitron/window", "@kitron/react", "@kitron/node"];
+  let local = false;
+  try {
+    local = (await fs.stat(path.join(repoRoot, "packages"))).isDirectory();
+  } catch {
+    local = false;
+  }
+  const deps: Record<string, string> = { react: "^19.3.0" };
+  for (const n of names) {
+    if (local) {
+      const sub = n === "kitron" ? "packages/kitron" : `packages/${n.slice("@kitron/".length)}`;
+      deps[n] = `file:${path.relative(appDir, path.join(repoRoot, sub)) || "."}`;
+    } else {
+      deps[n] = "0.1.0";
+    }
+  }
+  return deps;
 }
 
 const TEMPLATE_CONFIG = (name: string) => `import { defineConfig } from "@kitron/core/config";
@@ -144,13 +170,105 @@ async function cmdDev(args: string[]): Promise<void> {
   const headless = args.includes("--headless");
   const permissions = flag(args, "--permissions");
   console.log(`[kitron] dev ${headless ? "(headless — no OS window)" : "(native window)"}`);
-  // 1. ensure Rust runtime binary exists (best effort)
   const bin = await ensureRuntimeBinary();
-  // 2. launch runtime host (window + UI painter + Node sidecar)
-  const rtArgs = ["run", "--app-dir", process.cwd(), ...(headless ? ["--headless"] : [])];
+  const sock = socketPath(process.cwd());
+
+  // 1. window host (+ Node sidecar) with a UI socket for app code.
+  const rtArgs = ["run", "--app-dir", process.cwd(), "--socket", sock, ...(headless ? ["--headless"] : [])];
   if (permissions) rtArgs.push("--permissions", permissions);
-  const child = spawn(bin, rtArgs, { stdio: "inherit" });
-  await new Promise<void>((resolve) => { child.on("exit", () => resolve()); });
+  const rt = spawn(bin, rtArgs, { stdio: "inherit" });
+  const killRt = () => {
+    try { rt.kill(); } catch { /* ignore */ }
+  };
+  try {
+    await waitForSocket(sock);
+  } catch (e) {
+    killRt();
+    throw e;
+  }
+
+  // 2. bundle + run the UI entry (src/App.tsx). Nothing else executes it.
+  const ui = await startUiEntry(process.cwd(), sock);
+  const code = await new Promise<number | null>((resolve) => {
+    rt.on("exit", (c) => resolve(c));
+    ui.on("exit", (c) => resolve(c));
+  });
+  try { ui.kill(); } catch { /* ignore */ }
+  killRt();
+  try { await fs.unlink(sock); } catch { /* ignore */ }
+  if (code !== 0 && code !== null) process.exitCode = code;
+}
+
+/** Deterministic socket path per app directory. */
+function socketPath(appDir: string): string {
+  const tmp = process.env["TMPDIR"] ?? "/tmp";
+  const safe = path.basename(appDir).toLowerCase().replace(/[^a-z0-9]/g, "-");
+  return path.join(tmp, `kitron-${safe}.sock`);
+}
+
+async function waitForSocket(sock: string): Promise<void> {
+  const { default: net } = await import("node:net");
+  const deadline = Date.now() + 15_000;
+  for (;;) {
+    const ok = await new Promise<boolean>((resolve) => {
+      const s = net.createConnection(sock);
+      s.once("connect", () => {
+        s.destroy();
+        resolve(true);
+      });
+      s.once("error", () => resolve(false));
+    });
+    if (ok) return;
+    if (Date.now() > deadline) throw new Error(`runtime socket never appeared: ${sock}`);
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
+/**
+ * Bundle src/App.tsx with esbuild and run it with the bridge pre-connected.
+ * Returns the UI child process (its exit ends `dev`, like Metro bundling).
+ */
+async function startUiEntry(appDir: string, sock: string): Promise<ReturnType<typeof spawn>> {
+  const { default: esbuild } = await import("esbuild");
+  const entry = path.join(appDir, "src", "App.tsx");
+  try {
+    await fs.stat(entry);
+  } catch {
+    throw new Error(`missing UI entry: ${entry} (kitron dev runs src/App.tsx)`);
+  }
+  const outDir = path.join(process.env["TMPDIR"] ?? "/tmp", `kitron-ui-${process.pid}`);
+  await fs.mkdir(outDir, { recursive: true });
+  const bundle = path.join(outDir, "app.mjs");
+  // Single bundle: connect the bridge FIRST, then run App (top-level await
+  // in App.tsx executes on import). One module graph = one bridge singleton.
+  const entrySource = [
+    `import { SocketTransport, setBridgeTransport } from "@kitron/core";`,
+    `const __kitronTransport = new SocketTransport({ path: process.env["KITRON_SOCKET"] });`,
+    `await __kitronTransport.ready;`,
+    `setBridgeTransport(__kitronTransport);`,
+    `await import(${JSON.stringify(entry)});`,
+    ``,
+  ].join("\n");
+  await esbuild.build({
+    stdin: { contents: entrySource, loader: "ts", resolveDir: appDir },
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    outfile: bundle,
+    absWorkingDir: appDir,
+    logLevel: "warning",
+    // One React only: the reconciler must share internals with the app's
+    // react copy, never the Kitron workspace's (duplicate React breaks hooks).
+    alias: {
+      react: path.join(appDir, "node_modules", "react"),
+    },
+  });
+  console.log("[kitron] UI entry bundled, connecting to runtime…");
+  return spawn("node", [bundle], {
+    cwd: appDir,
+    stdio: "inherit",
+    env: { ...process.env, KITRON_SOCKET: sock },
+  });
 }
 
 async function ensureRuntimeBinary(): Promise<string> {

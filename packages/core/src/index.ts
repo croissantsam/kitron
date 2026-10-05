@@ -18,6 +18,8 @@ export { InMemoryTransport, UnavailableTransport } from "./transports.js";
 export type { Handler } from "./transports.js";
 export { StdioTransport } from "./stdio.js";
 export type { StdioTransportOptions } from "./stdio.js";
+export { SocketTransport } from "./socket.js";
+export type { SocketTransportOptions } from "./socket.js";
 export { app } from "./app.js";
 export type { AppEvent } from "./app.js";
 export { defineConfig } from "./config.js";

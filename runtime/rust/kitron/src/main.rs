@@ -47,6 +47,10 @@ enum Cmd {
         /// Mirrors `permissions` in kitron.config.
         #[arg(long)]
         permissions: Option<String>,
+        /// Unix socket path for UI-runner IPC (in addition to stdio).
+        /// The CLI starts the UI entry with KITRON_SOCKET pointing here.
+        #[arg(long)]
+        socket: Option<String>,
     },
 }
 
@@ -59,8 +63,8 @@ async fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     kitron_runtime::crash::init(env!("CARGO_PKG_VERSION").to_string());
     match cli.cmd {
-        Cmd::Run { app_dir, headless, title, size, permissions } => {
-            run(app_dir, headless, title, size, permissions).await?;
+        Cmd::Run { app_dir, headless, title, size, permissions, socket } => {
+            run(app_dir, headless, title, size, permissions, socket).await?;
         }
     }
     Ok(())
@@ -76,6 +80,7 @@ async fn run(
     title: Option<String>,
     size: Option<String>,
     permissions: Option<String>,
+    socket: Option<String>,
 ) -> anyhow::Result<()> {
     let (app, _rx) = AppManager::new();
     let app = Arc::new(app);
@@ -101,6 +106,17 @@ async fn run(
             tracing::error!(error = %e, "stdio IPC loop ended");
         }
     });
+
+    // Optional Unix socket: the CLI's UI runner connects here so app code
+    // (`src/App.tsx`) can drive windows while the host owns the event loop.
+    if let Some(path) = socket {
+        let rt_sock = rt.clone();
+        tokio::spawn(async move {
+            if let Err(e) = socket_loop(rt_sock, path).await {
+                tracing::error!(error = %e, "socket IPC loop ended");
+            }
+        });
+    }
 
     // Best-effort Node sidecar: `node <app_dir>/backend/index.js` if present.
     let backend_entry = std::path::Path::new(&app_dir).join("backend").join("index.js");
@@ -140,23 +156,11 @@ fn run_windowed(rt: Arc<Runtime>, title: String, w: u32, h: u32) -> anyhow::Resu
 
     let event_loop = EventLoop::<KitronUserEvent>::with_user_event().build()?;
     kitron_runtime::os_events::set_proxy(event_loop.create_proxy());
-    let boot_attrs = (title.clone(), w, h);
-
+    let _ = (title, w, h); // kept for --title/--size parity; windows come from window.create
     let mut windows: std::collections::HashMap<winit::window::WindowId, LiveWindow> =
         std::collections::HashMap::new();
     #[allow(unused_mut)]
     let mut first_hwnd: Option<isize> = None;
-
-    // Pre-register the primary window in headless state so early
-    // `window.get` calls from JS succeed before first paint.
-    let boot_opts = kitron_core::WindowCreateOptions {
-        width: boot_attrs.1,
-        height: boot_attrs.2,
-        title: boot_attrs.0.clone(),
-        center: true,
-        ..Default::default()
-    };
-    rt.windows.create_headless(boot_opts);
 
     // Open a real OS window for every headless record that has none, and
     // drop locals whose records were closed. Main thread only.
@@ -166,9 +170,20 @@ fn run_windowed(rt: Arc<Runtime>, title: String, w: u32, h: u32) -> anyhow::Resu
                         first_hwnd: &mut Option<isize>| {
         windows.retain(|_, lw| rt.windows.get(&lw.kitron_id).is_ok());
         for (kid, opts) in rt.windows.unbound() {
-            let attrs = winit::window::WindowAttributes::default()
+            let mut attrs = winit::window::WindowAttributes::default()
                 .with_title(opts.title.clone())
-                .with_inner_size(winit::dpi::LogicalSize::new(opts.width, opts.height));
+                .with_inner_size(winit::dpi::LogicalSize::new(opts.width, opts.height))
+                .with_decorations(opts.decorations)
+                .with_resizable(opts.resizable)
+                .with_active(true)
+                .with_visible(opts.visible);
+            if opts.center {
+                if let Some(pos) = centered_position(elwt, opts.width, opts.height) {
+                    attrs = attrs.with_position(pos);
+                }
+            } else if let (Some(x), Some(y)) = (opts.x, opts.y) {
+                attrs = attrs.with_position(winit::dpi::LogicalPosition::new(x as f64, y as f64));
+            }
             match elwt.create_window(attrs) {
                 Ok(created) => {
                     let win: KitronWindow = Arc::new(created);
@@ -186,6 +201,8 @@ fn run_windowed(rt: Arc<Runtime>, title: String, w: u32, h: u32) -> anyhow::Resu
                         }
                     }
                     let _ = first_hwnd.is_none();
+                    win.focus_window();
+                    win.request_redraw();
                     windows.insert(wid, LiveWindow { kitron_id: info.id.clone(), handle: win, surface: None, cursor: (0.0, 0.0) });
                     tracing::info!(window_id = %info.id, "native window created");
                 }
@@ -359,6 +376,95 @@ fn run_windowed(rt: Arc<Runtime>, title: String, w: u32, h: u32) -> anyhow::Resu
         }
     })?;
     Ok(())
+}
+
+/// Center a WxH logical window on the primary monitor (logical px).
+fn centered_position(
+    elwt: &winit::event_loop::ActiveEventLoop,
+    w: u32,
+    h: u32,
+) -> Option<winit::dpi::LogicalPosition<f64>> {
+    let m = elwt.primary_monitor()?;
+    let scale = m.scale_factor().max(1.0);
+    let pos = m.position();
+    let size = m.size();
+    let (mx, my) = (pos.x as f64 / scale, pos.y as f64 / scale);
+    let (mw, mh) = (size.width as f64 / scale, size.height as f64 / scale);
+    Some(winit::dpi::LogicalPosition::new(
+        mx + (mw - w as f64) / 2.0,
+        my + (mh - h as f64) / 2.0,
+    ))
+}
+
+#[cfg(unix)]
+async fn socket_loop(rt: Arc<Runtime>, path: String) -> anyhow::Result<()> {
+    use tokio::net::UnixListener;
+    let _ = std::fs::remove_file(&path); // stale socket from a previous run
+    let listener = UnixListener::bind(&path)?;
+    tracing::info!(socket = %path, "IPC socket listening");
+    loop {
+        let (stream, _) = listener.accept().await?;
+        let rt = rt.clone();
+        tokio::spawn(async move {
+            if let Err(e) = serve_stream(rt, stream).await {
+                tracing::debug!(error = %e, "socket client gone");
+            }
+        });
+    }
+}
+
+#[cfg(unix)]
+async fn serve_stream(rt: Arc<Runtime>, stream: tokio::net::UnixStream) -> anyhow::Result<()> {
+    let (rh, mut wh) = tokio::io::split(stream);
+    let mut reader = BufReader::new(rh).lines();
+    // Native events fan out to every connected client.
+    let mut rx = rt.app.subscribe();
+    let wh = Arc::new(tokio::sync::Mutex::new(wh));
+    let event_out = wh.clone();
+    tokio::spawn(async move {
+        loop {
+            match rx.recv().await {
+                Ok((name, payload)) => {
+                    let line = serde_json::json!({ "type": "event", "name": name, "payload": payload });
+                    let mut s = serde_json::to_string(&line).unwrap_or_default();
+                    s.push('\n');
+                    let mut g = event_out.lock().await;
+                    use tokio::io::AsyncWriteExt;
+                    if g.write_all(s.as_bytes()).await.is_err() {
+                        break;
+                    }
+                }
+                Err(tokio::sync::broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(_) => break,
+            }
+        }
+    });
+    while let Some(line) = reader.next_line().await? {
+        let line = line.trim().to_string();
+        if line.is_empty() {
+            continue;
+        }
+        let req: Result<IpcRequest, _> = serde_json::from_str(&line);
+        let resp_value: serde_json::Value = match req {
+            Ok(r) => serde_json::to_value(rt.dispatch(r).await)?,
+            Err(e) => serde_json::json!({
+                "id": 0, "ok": false,
+                "error": { "code": "KITRON_INVALID_PARAMS", "message": format!("bad IPC frame: {e}"), "platform": kitron_core::current_platform() }
+            }),
+        };
+        let mut out = serde_json::to_string(&resp_value)?;
+        out.push('\n');
+        let mut g = wh.lock().await;
+        use tokio::io::AsyncWriteExt;
+        g.write_all(out.as_bytes()).await?;
+        g.flush().await?;
+    }
+    Ok(())
+}
+
+#[cfg(not(unix))]
+async fn socket_loop(_rt: Arc<Runtime>, _path: String) -> anyhow::Result<()> {
+    anyhow::bail!("--socket is Unix-only for now (Windows named pipes are Phase 4)");
 }
 
 async fn stdio_loop(rt: Arc<Runtime>) -> anyhow::Result<()> {

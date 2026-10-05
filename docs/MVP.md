@@ -32,6 +32,10 @@
 - [ ] Windows (compiles cross-platform via `winit`; Phase 4: CI, signing, installers)
 - [x] macOS works (AppKit path via winit; `NSOpenPanel`/notifications/clipboard wired)
 - [x] Packaging (`kitron build` + `kitron package` → `.app` skeleton; `.dmg`/`.msi` in Phase 4)
+- [x] UI runner (`kitron dev` bundles `src/App.tsx` with esbuild and runs it
+  against the window host over a Unix socket; single React copy via alias)
+- [x] Window placement (center/decorations/resizable/position honored;
+  no window exists until app code calls `window.create`)
 
 ## Verify
 

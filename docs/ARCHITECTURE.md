@@ -5,7 +5,7 @@ Kitron UI (@kitron/ui reconciler → UiManager tree)
      │
 JavaScript / TypeScript (logic)
      │
-JSI / Native Module (prod) · IPC socket/stdio (MVP dev)
+Unix socket (`kitron dev` UI runner) · stdio (headless/CI) · JSI later
      │
 Rust Core (windows, app, dialogs, clipboard, shell, node sidecar)
      │
