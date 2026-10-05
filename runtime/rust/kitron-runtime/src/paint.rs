@@ -29,11 +29,16 @@ pub fn parse_color(s: &str) -> tiny_skia::Color {
 pub struct Painter<'a> {
     fonts: &'a mut cosmic_text::FontSystem,
     cache: cosmic_text::SwashCache,
+    scale: f32,
 }
 
 impl<'a> Painter<'a> {
-    pub fn new(fonts: &'a mut cosmic_text::FontSystem) -> Self {
-        Self { fonts, cache: cosmic_text::SwashCache::new() }
+    pub fn new(fonts: &'a mut cosmic_text::FontSystem, scale: f32) -> Self {
+        Self { fonts, cache: cosmic_text::SwashCache::new(), scale: scale.max(1.0) }
+    }
+
+    fn px(&self, v: f32) -> f32 {
+        v * self.scale
     }
 
     pub fn paint(
@@ -69,15 +74,18 @@ impl<'a> Painter<'a> {
             let item = &items[*i];
             if item.scrollable && item.width > 1.0 && item.height > 1.0 {
                 self.paint_node(pixmap, item, images, ox, oy, true);
-                if let Some(mut layer) = tiny_skia::Pixmap::new(item.width as u32, item.height as u32) {
+                let (lw, lh) = ((item.width * self.scale) as u32, (item.height * self.scale) as u32);
+                if let Some(mut layer) = tiny_skia::Pixmap::new(lw.max(1), lh.max(1)) {
                     *i += 1;
                     self.walk(&mut layer, items, images, i, depth + 1, ox - item.x, oy - item.y);
+                    // Layer is already physical: translate only.
+                    let (tx, ty) = ((item.x + ox) * self.scale, (item.y + oy) * self.scale);
                     pixmap.draw_pixmap(
                         0,
                         0,
                         layer.as_ref(),
                         &tiny_skia::PixmapPaint::default(),
-                        tiny_skia::Transform::from_row(1.0, 0.0, 0.0, 1.0, item.x, item.y),
+                        tiny_skia::Transform::from_row(1.0, 0.0, 0.0, 1.0, tx, ty),
                         None,
                     );
                 } else {
@@ -110,14 +118,16 @@ impl<'a> Painter<'a> {
         if item.width <= 0.0 || item.height <= 0.0 {
             return;
         }
-        let (x, y) = (item.x + ox, item.y + oy);
+        let s_ = self.scale;
+        let (x, y) = ((item.x + ox) * s_, (item.y + oy) * s_);
+        let (w, h) = (item.width * s_, item.height * s_);
         // Backgrounds: views (when set), buttons, inputs.
         let draws_bg = item.background.is_some()
             && !matches!(item.kind, UiKind::Text)
             || matches!(item.kind, UiKind::Button | UiKind::TextInput);
         if draws_bg {
             let bg = item.background.clone().unwrap_or_else(|| "#e8e8e8".into());
-            if let Some(path) = rounded_rect(x, y, item.width, item.height, item.border_radius) {
+            if let Some(path) = rounded_rect(x, y, w, h, item.border_radius * s_) {
                 let mut paint = tiny_skia::Paint::default();
                 paint.set_color(parse_color(&bg));
                 paint.anti_alias = true;
@@ -136,7 +146,7 @@ impl<'a> Painter<'a> {
                     pixmap.stroke_path(
                         &path,
                         &stroke,
-                        &tiny_skia::Stroke { width: 2.0, ..Default::default() },
+                        &tiny_skia::Stroke { width: 2.0 * s_, ..Default::default() },
                         tiny_skia::Transform::identity(),
                         None,
                     );
@@ -146,29 +156,37 @@ impl<'a> Painter<'a> {
         // Images paint their pixels (scaled to the node box).
         if item.kind == UiKind::Image {
             if let Some(img) = images.get(&item.id) {
-                self.paint_image(pixmap, img, x, y, item.width, item.height);
+                self.paint_image(pixmap, img, x, y, w, h);
             }
         }
         if bg_only {
             return;
         }
         if !item.text.is_empty() {
-            let pad = 8.0;
+            let pad = 8.0 * s_;
+            // Layout in logical px, rasterize at display scale.
+            let lx = (item.x + ox) * s_;
+            let ly = (item.y + oy) * s_;
             self.paint_text(
                 pixmap,
                 &item.text,
-                x + pad,
-                y + pad,
-                (item.width - pad * 2.0).max(1.0),
+                lx + pad,
+                ly + pad,
+                (item.width - 8.0 * 2.0).max(1.0),
                 item.font_size,
                 &item.color,
             );
             if item.focused {
                 // Caret after the text.
-                let w = text_width(self.fonts, &item.text, item.font_size, item.width);
+                let tw = text_width(self.fonts, &item.text, item.font_size, item.width);
                 let mut paint = tiny_skia::Paint::default();
                 paint.set_color(parse_color(&item.color));
-                if let Some(r) = tiny_skia::Rect::from_xywh(x + pad + w + 2.0, y + pad, 2.0, item.font_size * 1.2) {
+                if let Some(r) = tiny_skia::Rect::from_xywh(
+                    lx + pad + tw * s_ + 2.0 * s_,
+                    ly + pad,
+                    2.0 * s_,
+                    item.font_size * 1.2 * s_,
+                ) {
                     pixmap.fill_rect(r, &paint, tiny_skia::Transform::identity(), None);
                 }
             }
@@ -238,9 +256,13 @@ impl<'a> Painter<'a> {
         let paint_color = parse_color(color);
         for run in buffer.layout_runs() {
             for glyph in run.glyphs {
-                let physical = glyph.physical((x, y), 1.0);
+                // Buffer is laid out in logical px; rasterize at display scale.
+                // physical() scales the glyph AND the key, offset stays physical.
+                let physical = glyph.physical((x, y), self.scale);
                 let key = physical.cache_key;
                 let Some(image) = self.cache.get_image(self.fonts, key).as_ref() else { continue };
+                // physical() already applied the display scale to the glyph;
+                // the raster offset arrives in physical px.
                 blit_glyph(pixmap, image, physical.x, physical.y, paint_color);
             }
         }
@@ -424,7 +446,7 @@ mod tests {
         let placed = m.layout("win", 800.0, 600.0).unwrap();
 
         let mut fonts = cosmic_text::FontSystem::new();
-        let mut painter = Painter::new(&mut fonts);
+        let mut painter = Painter::new(&mut fonts, 1.0);
         let mut pixmap = tiny_skia::Pixmap::new(800, 600).unwrap();
         painter.paint(&mut pixmap, &placed, &std::collections::HashMap::new());
 

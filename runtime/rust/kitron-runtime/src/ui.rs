@@ -492,6 +492,7 @@ impl UiManager {
         vw: f32,
         vh: f32,
         pixmap: &mut tiny_skia::Pixmap,
+        scale: f32,
     ) -> Result<(), UiError> {
         let placed = self.layout(window, vw, vh)?;
         let mut fonts = self.fonts.lock().unwrap();
@@ -502,7 +503,7 @@ impl UiManager {
             .iter()
             .filter_map(|(id, n)| n.image.clone().map(|img| (id.clone(), img)))
             .collect();
-        crate::paint::Painter::new(&mut fonts).paint(pixmap, &placed, &images);
+        crate::paint::Painter::new(&mut fonts, scale).paint(pixmap, &placed, &images);
         Ok(())
     }
     /// Topmost interactive node at a point (buttons + inputs win over views).

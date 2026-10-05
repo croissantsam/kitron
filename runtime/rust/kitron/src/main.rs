@@ -226,11 +226,14 @@ fn run_windowed(rt: Arc<Runtime>) -> anyhow::Result<()> {
         if size.width == 0 || size.height == 0 {
             return;
         }
+        // Physical framebuffer, logical layout: HiDPI-correct on Retina.
+        let scale = lw.handle.scale_factor() as f32;
+        let (lw_, lh_) = (size.width as f32 / scale, size.height as f32 / scale);
         let mut pixmap = match tiny_skia::Pixmap::new(size.width, size.height) {
             Some(p) => p,
             None => return,
         };
-        match rt.ui.paint_window(&lw.kitron_id, size.width as f32, size.height as f32, &mut pixmap) {
+        match rt.ui.paint_window(&lw.kitron_id, lw_, lh_, &mut pixmap, scale) {
             Ok(()) => {}
             Err(_) => return, // NoRoot: leave the window blank.
         }
@@ -308,7 +311,14 @@ fn run_windowed(rt: Arc<Runtime>) -> anyhow::Result<()> {
                     }
                     WindowEvent::Resized(s) => {
                         if let Some(kid) = &kid {
-                            let _ = rt.windows.set_size(kid, s.width, s.height);
+                            if let Some(lw) = windows.get(&window_id) {
+                                let scale = lw.handle.scale_factor() as f32;
+                                let _ = rt.windows.set_size(
+                                    kid,
+                                    (s.width as f32 / scale) as u32,
+                                    (s.height as f32 / scale) as u32,
+                                );
+                            }
                         }
                         if let Some(lw) = windows.get_mut(&window_id) {
                             paint_window(&rt, lw);
@@ -321,15 +331,18 @@ fn run_windowed(rt: Arc<Runtime>) -> anyhow::Result<()> {
                     }
                     WindowEvent::CursorMoved { position, .. } => {
                         if let Some(lw) = windows.get_mut(&window_id) {
-                            lw.cursor = (position.x as f32, position.y as f32);
+                            // winit reports physical px; the UI tree is logical.
+                            let scale = lw.handle.scale_factor() as f32;
+                            lw.cursor = (position.x as f32 / scale, position.y as f32 / scale);
                         }
                     }
                     WindowEvent::MouseInput { state: ElementState::Pressed, button: MouseButton::Left, .. } => {
                         if let Some(lw) = windows.get_mut(&window_id) {
                             let (x, y) = lw.cursor;
+                            let scale = lw.handle.scale_factor() as f32;
                             let size = lw.handle.inner_size();
                             let kid = lw.kitron_id.clone();
-                            match rt.ui.press_at(&kid, x, y, size.width as f32, size.height as f32) {
+                            match rt.ui.press_at(&kid, x, y, size.width as f32 / scale, size.height as f32 / scale) {
                                 Ok(Some(btn)) => {
                                     rt.app.emit("ui.press", serde_json::json!({ "windowId": kid, "nodeId": btn }));
                                 }
@@ -342,14 +355,15 @@ fn run_windowed(rt: Arc<Runtime>) -> anyhow::Result<()> {
                         use winit::event::MouseScrollDelta;
                         if let Some(lw) = windows.get_mut(&window_id) {
                             let (x, y) = lw.cursor;
+                            let scale = lw.handle.scale_factor() as f32;
                             let size = lw.handle.inner_size();
                             let kid = lw.kitron_id.clone();
                             let (dx, dy) = match delta {
                                 MouseScrollDelta::LineDelta(dx, dy) => (dx * 24.0, dy * 24.0),
-                                MouseScrollDelta::PixelDelta(p) => (p.x as f32, p.y as f32),
+                                MouseScrollDelta::PixelDelta(p) => (p.x as f32 / scale, p.y as f32 / scale),
                             };
                             // Natural scrolling: content follows the fingers.
-                            match rt.ui.scroll_by(&kid, x, y, -dx, -dy, size.width as f32, size.height as f32) {
+                            match rt.ui.scroll_by(&kid, x, y, -dx, -dy, size.width as f32 / scale, size.height as f32 / scale) {
                                 Ok(Some((node, (sx, sy)))) => {
                                     rt.app.emit("ui.scroll", serde_json::json!({ "windowId": kid, "nodeId": node, "x": sx, "y": sy }));
                                 }
