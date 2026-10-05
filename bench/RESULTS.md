@@ -4,17 +4,18 @@ Measured on this machine with `node bench/run.mjs --runs=5`
 (see `results.json` for raw output). Re-run it yourself — same scripts,
 same hello-world apps.
 
-## Results (median of 5)
+## Results (median of 5, October 2026 run)
 
 | Metric | Kitron | Electron 35 | Ratio |
 |---|---|---|---|
-| Shipped runtime bytes | **13.2 MB** (`kitron-runtime` release binary) | **246 MB** (`Electron.app` framework every app re-bundles) | ~19× smaller |
-| Cold start → interactive hello | **47 ms** (spawn → `window.create` + render + layout) | **678 ms** (spawn → `did-finish-load`) | ~14× faster |
-| Idle memory (whole tree) | **13.3 MiB** RSS | **346 MiB** RSS (main + renderer + GPU + utility) | ~26× leaner |
+| Shipped runtime bytes | **13.4 MB** (`kitron-runtime` release binary) | **246 MB** (`Electron.app` framework every app re-bundles) | ~18× smaller |
+| Cold start → interactive hello | **25 ms** (spawn → `window.create` + render + layout) | **380 ms** (spawn → `did-finish-load`) | ~15× faster |
+| Idle memory (whole tree) | **13.3 MiB** RSS | **395 MiB** RSS (main + renderer + GPU + utility) | ~30× leaner |
 
 Machine: macOS 27 arm64, Apple M4, 16 GB RAM. Kitron first run was
-920 ms cold (page cache), then 43–50 ms warm; Electron 650–800 ms.
+777 ms cold (page cache), then 25–31 ms warm; Electron 375–1050 ms.
 Idle sampled 3× over ~3.5 s after a 1.5 s settle, whole process tree.
+(Previous run: 47 ms / 678 ms / 13.3 vs 346 MiB — same picture.)
 
 ## What was compared
 

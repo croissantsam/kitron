@@ -97,7 +97,14 @@ async function measureKitron() {
     if (result.error) throw new Error(`kitron: ${result.error}`);
     starts.push(result.startupReadyMs);
     if (i === 0) mem = await sampleIdle(wrapper, result.pid);
-    else wrapper.kill("SIGKILL");
+    else {
+      try {
+        process.kill(result.pid, "SIGKILL");
+      } catch {
+        // already gone
+      }
+      wrapper.kill("SIGKILL");
+    }
     await sleep(500);
   }
   return { startupMs: median(starts), allStarts: starts, idleRssKiB: mem };
@@ -113,7 +120,14 @@ async function measureElectron() {
     starts.push(result.startupReadyMs);
     fallback = fallback || result.fallback;
     if (i === 0) mem = await sampleIdle(wrapper, result.pid);
-    else wrapper.kill("SIGKILL");
+    else {
+      try {
+        process.kill(result.pid, "SIGKILL");
+      } catch {
+        // already gone
+      }
+      wrapper.kill("SIGKILL");
+    }
     await sleep(800);
   }
   return { startupMs: median(starts), allStarts: starts, idleRssKiB: mem, fallback };

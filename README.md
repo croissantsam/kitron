@@ -4,9 +4,9 @@
 
 Mainline React renders through Kitron's own reconciler host, with a `react-native`-compatible API. TypeScript is the app language.
 
-Measured vs Electron 35 (hello-world, Apple M4): **~19× smaller runtime
-(13 MB vs 246 MB), ~14× faster cold start (47 ms vs 678 ms), ~26× less
-idle memory (13 MB vs 346 MB)** — see [`bench/RESULTS.md`](bench/RESULTS.md)
+Measured vs Electron 35 (hello-world, Apple M4): **~18× smaller runtime
+(13 MB vs 246 MB), ~15× faster cold start (25 ms vs 380 ms), ~30× less
+idle memory (13 MB vs 395 MB)** — see [`bench/RESULTS.md`](bench/RESULTS.md)
 for methodology and honest caveats. Node.js provides filesystem/network/crypto. Rust owns windows, menus, tray, dialogs, shortcuts, updater, and OS integration. No Electron, no Chromium, no web renderer.
 
 ## Layout

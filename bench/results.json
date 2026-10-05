@@ -6,27 +6,27 @@
   },
   "runs": 5,
   "kitron": {
-    "startupReadyMsMedian": 47,
+    "startupReadyMsMedian": 25,
     "startupAllMs": [
-      920,
-      47,
-      43,
-      43,
-      50
+      777,
+      25,
+      25,
+      31,
+      25
     ],
     "idleRssMiB": 13.3,
-    "runtimeBinaryKiB": 13564
+    "runtimeBinaryKiB": 13688
   },
   "electron": {
-    "startupReadyMsMedian": 678,
+    "startupReadyMsMedian": 380,
     "startupAllMs": [
-      800,
-      716,
-      678,
-      654,
-      650
+      1050,
+      375,
+      375,
+      380,
+      402
     ],
-    "idleRssMiB": 346.3,
+    "idleRssMiB": 395.4,
     "frameworkKiB": 251648,
     "paintFallback": false
   }
