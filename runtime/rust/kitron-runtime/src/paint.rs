@@ -311,7 +311,7 @@ fn blit_glyph(
     match image.content {
         SwashContent::Mask => {
             let ox = dx + image.placement.left;
-            let oy = dy + image.placement.top;
+            let oy = dy - image.placement.top;
             for gy in 0..image.placement.height as i32 {
                 for gx in 0..image.placement.width as i32 {
                     let px = ox + gx;
@@ -338,7 +338,7 @@ fn blit_glyph(
         }
         SwashContent::Color => {
             let ox = dx + image.placement.left;
-            let oy = dy + image.placement.top;
+            let oy = dy - image.placement.top;
             for gy in 0..image.placement.height as i32 {
                 for gx in 0..image.placement.width as i32 {
                     let px = ox + gx;
@@ -361,7 +361,7 @@ fn blit_glyph(
         SwashContent::SubpixelMask => {
             // LCD subpixel: treat as grayscale mask (correct-ish, no fringing).
             let ox = dx + image.placement.left;
-            let oy = dy + image.placement.top;
+            let oy = dy - image.placement.top;
             let w = image.placement.width as usize / 3;
             for gy in 0..image.placement.height as i32 {
                 for gx in 0..w as i32 {
@@ -419,6 +419,45 @@ fn rounded_rect(x: f32, y: f32, w: f32, h: f32, r: f32) -> Option<tiny_skia::Pat
 mod tests {
     use super::*;
     use crate::ui::UiManager;
+
+    #[test]
+    fn text_renders_on_baseline_without_jumble() {
+        // Regression: swash placement is y-up, so blit at (left, -top).
+        // Adding +top instead scatters glyphs vertically (superscript jumble).
+        let mut fonts = cosmic_text::FontSystem::new();
+        let mut painter = Painter::new(&mut fonts, 2.0);
+        let mut pixmap = tiny_skia::Pixmap::new(800, 200).unwrap();
+        pixmap.fill(parse_color("#ffffff"));
+        painter.paint_text(&mut pixmap, "Hello Kitron", 20.0, 100.0, 760.0, 28.0, "#111111");
+        let dark = |x: u32, y: u32| {
+            let px = pixmap.pixel(x, y).unwrap();
+            px.red() < 100 && px.green() < 100 && px.blue() < 100
+        };
+        // Nothing may print above the text top (no superscript escapees).
+        for y in 0..50 {
+            for x in (0..800).step_by(7) {
+                assert!(!dark(x, y), "stray pixel at {x},{y}");
+            }
+        }
+        // The text band itself must carry real ink, concentrated on one
+        // baseline: "Hello Kitron" has no descenders, so ink spans ~cap
+        // height. Jumbled glyphs scatter across a much taller band.
+        let (mut top, mut bottom, mut ink) = (200, 0, 0);
+        for y in 0..200 {
+            for x in (0..800).step_by(3) {
+                if dark(x, y) {
+                    ink += 1;
+                    top = top.min(y);
+                    bottom = bottom.max(y);
+                }
+            }
+        }
+        assert!(ink > 200, "too little ink: {ink}");
+        assert!(
+            bottom - top <= 44,
+            "glyphs scattered off baseline: rows {top}..{bottom}"
+        );
+    }
 
     #[test]
     fn parses_colors() {
