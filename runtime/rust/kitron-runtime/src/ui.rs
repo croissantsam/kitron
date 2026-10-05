@@ -212,6 +212,30 @@ impl UiManager {
         Ok(())
     }
 
+    /// Partial merge: only keys present in `patch` overwrite. Full typed
+    /// setters replace; the wire protocol patches (e.g. text-only refresh).
+    pub fn patch_props(&self, id: &str, patch: &serde_json::Value) -> Result<(), UiError> {
+        let root = {
+            let mut nodes = self.nodes.lock().unwrap();
+            let n = nodes.get_mut(id).ok_or_else(|| UiError::NotFound(id.into()))?;
+            merge_props(&mut n.props, patch);
+            root_of(&nodes, id)
+        };
+        self.dirty_root(&root);
+        Ok(())
+    }
+
+    pub fn patch_style(&self, id: &str, patch: &serde_json::Value) -> Result<(), UiError> {
+        let root = {
+            let mut nodes = self.nodes.lock().unwrap();
+            let n = nodes.get_mut(id).ok_or_else(|| UiError::NotFound(id.into()))?;
+            merge_style(&mut n.style, patch);
+            root_of(&nodes, id)
+        };
+        self.dirty_root(&root);
+        Ok(())
+    }
+
     pub fn set_style(&self, id: &str, style: UiStyle) -> Result<(), UiError> {
         let root = {
             let mut nodes = self.nodes.lock().unwrap();
@@ -684,6 +708,84 @@ impl UiManager {
     }
 }
 
+fn merge_props(props: &mut UiProps, patch: &serde_json::Value) {
+    let get_str = |k: &str| patch.get(k).and_then(|v| v.as_str()).map(|v| v.to_string());
+    let get_f32 = |k: &str| patch.get(k).and_then(|v| v.as_f64()).map(|v| v as f32);
+    let get_bool = |k: &str| patch.get(k).and_then(|v| v.as_bool());
+    if let Some(v) = get_str("text") {
+        props.text = v;
+    }
+    if let Some(v) = get_str("placeholder") {
+        props.placeholder = v;
+    }
+    if let Some(v) = get_str("uri") {
+        props.uri = v;
+    }
+    if patch.get("background").is_some() {
+        props.background = get_str("background");
+    }
+    if patch.get("color").is_some() {
+        props.color = get_str("color");
+    }
+    if patch.get("fontSize").is_some() {
+        props.font_size = get_f32("fontSize");
+    }
+    if patch.get("borderRadius").is_some() {
+        props.border_radius = get_f32("borderRadius");
+    }
+    if let Some(v) = get_bool("pressable") {
+        props.pressable = v;
+    }
+    if let Some(v) = get_bool("scrollable") {
+        props.scrollable = v;
+    }
+}
+
+fn merge_style(style: &mut UiStyle, patch: &serde_json::Value) {
+    let get_str = |k: &str| patch.get(k).and_then(|v| v.as_str()).map(|v| v.to_string());
+    let get_f32 = |k: &str| patch.get(k).and_then(|v| v.as_f64()).map(|v| v as f32);
+    if let Some(v) = get_f32("flex") {
+        style.flex = Some(v);
+    }
+    if let Some(v) = get_f32("shrink") {
+        style.shrink = Some(v);
+    }
+    if let Some(v) = get_f32("padding") {
+        style.padding = Some(v);
+    }
+    if let Some(v) = get_f32("gap") {
+        style.gap = Some(v);
+    }
+    if let Some(v) = get_str("direction") {
+        style.direction = Some(v);
+    }
+    if let Some(v) = get_str("align") {
+        style.align = Some(v);
+    }
+    if let Some(v) = get_str("justify") {
+        style.justify = Some(v);
+    }
+    if let Some(v) = patch.get("width") {
+        style.width = ui_size_from_json(v);
+    }
+    if let Some(v) = patch.get("height") {
+        style.height = ui_size_from_json(v);
+    }
+}
+
+fn ui_size_from_json(v: &serde_json::Value) -> Option<UiSize> {
+    if let Some(n) = v.as_f64() {
+        return Some(UiSize::Pt(n as f32));
+    }
+    if let Some(s) = v.as_str() {
+        if s == "auto" {
+            return Some(UiSize::Auto(s.to_string()));
+        }
+        return Some(UiSize::Pct(s.to_string()));
+    }
+    None
+}
+
 fn root_of(nodes: &HashMap<String, UiNode>, id: &str) -> String {
     let mut root = id.to_string();
     while let Some(p) = nodes.get(&root).and_then(|x| x.parent.clone()) {
@@ -936,6 +1038,30 @@ mod tests {
         let img = placed.iter().find(|p| p.id == "img").unwrap();
         assert_eq!((img.width, img.height), (4.0, 2.0));
         tokio::fs::remove_file(&path).await.ok();
+    }
+
+    #[test]
+    fn partial_props_preserve_sibling_fields() {
+        // Regression: text-only refreshText must not wipe fontSize.
+        let m = mgr();
+        m.create("t".into(), UiKind::Text,
+            UiProps { text: "".into(), font_size: Some(28.0), ..Default::default() },
+            UiStyle::default()).unwrap();
+        m.create("root".into(), UiKind::View, UiProps::default(), UiStyle {
+            flex: Some(1.0), ..Default::default()
+        }).unwrap();
+        m.append("root", "t", None).unwrap();
+        m.set_root("win", "root").unwrap();
+        m.patch_props("t", &serde_json::json!({ "text": "Hello Kitron" })).unwrap();
+        let placed = m.layout("win", 1200.0, 800.0).unwrap();
+        let t = placed.iter().find(|p| p.id == "t").unwrap();
+        assert_eq!(t.font_size, 28.0);
+        assert!(t.width > 100.0, "28px text must measure wide, got {}", t.width);
+        // Null clears an optional.
+        m.patch_props("t", &serde_json::json!({ "background": null })).unwrap();
+        // Unknown keys are ignored, never an error.
+        m.patch_props("t", &serde_json::json!({ "nope": 1 })).unwrap();
+        m.patch_style("root", &serde_json::json!({ "gap": 4 })).unwrap();
     }
 
     #[test]

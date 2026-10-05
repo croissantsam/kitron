@@ -587,9 +587,9 @@ impl Runtime {
             }
             ("ui", "setProps") => match get_str("id") {
                 Some(nid) => {
-                    let props: crate::ui::UiProps =
-                        serde_json::from_value(p.get("props").cloned().unwrap_or(serde_json::json!({}))).unwrap_or_default();
-                    match self.ui.set_props(&nid, props) {
+                    // Partial merge: text-only refreshes must not wipe style-borne props.
+                    let patch = p.get("props").cloned().unwrap_or(serde_json::json!({}));
+                    match self.ui.patch_props(&nid, &patch) {
                         Ok(()) => {
                             self.windows.redraw_all();
                             IpcResponse::ok(id, serde_json::Value::Null)
@@ -601,9 +601,8 @@ impl Runtime {
             },
             ("ui", "setStyle") => match get_str("id") {
                 Some(nid) => {
-                    let style: crate::ui::UiStyle =
-                        serde_json::from_value(p.get("style").cloned().unwrap_or(serde_json::json!({}))).unwrap_or_default();
-                    match self.ui.set_style(&nid, style) {
+                    let patch = p.get("style").cloned().unwrap_or(serde_json::json!({}));
+                    match self.ui.patch_style(&nid, &patch) {
                         Ok(()) => {
                             self.windows.redraw_all();
                             IpcResponse::ok(id, serde_json::Value::Null)
