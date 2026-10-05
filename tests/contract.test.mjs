@@ -260,6 +260,9 @@ describe("ipc envelope contract", () => {
     await new Promise((r) => setTimeout(r, 200));
     await flushUi();
     assert.equal(props["r-1"].text, "Hello 1");
+    // The button keeps its title across updates (commitUpdate used to wipe it).
+    const btnId = Object.keys(props).find((id) => props[id] && props[id].text === "Go");
+    assert.ok(btnId, "button title survives re-render");
     await unmount("winR");
     core.setBridgeTransport(null);
   });

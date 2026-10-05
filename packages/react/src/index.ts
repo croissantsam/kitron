@@ -345,16 +345,26 @@ const hostConfig = {
     return null;
   },
 
-  commitUpdate(instance: Instance, payload: Record<string, unknown>): void {
-    instance.props = payload;
-    if (instance.uiId === null || instance.hostType === undefined) return;
-    const { uiProps, style } = splitProps(instance.hostType, payload);
-    if (instance.hostType === "Text") {
+  // NOTE: this reconciler calls commitUpdate(instance, TYPE, oldProps,
+  // newProps) — there is no update-payload argument. Diffing happens here
+  // from old/new props (prepareUpdate only sets the Update flag).
+  commitUpdate(
+    instance: Instance,
+    type: HostType,
+    oldProps: Record<string, unknown>,
+    newProps: Record<string, unknown>,
+  ): void {
+    void oldProps;
+    instance.props = newProps;
+    const hostType = type ?? instance.hostType;
+    if (instance.uiId === null || hostType === undefined) return;
+    const { uiProps, style } = splitProps(hostType, newProps);
+    if (hostType === "Text") {
       uiProps["text"] = textContent(instance);
     }
-    if (instance.hostType === "TextInput" && uiProps["text"] === undefined) {
-      uiProps["text"] = (payload["value"] as string) ?? (payload["defaultValue"] as string) ?? "";
-      uiProps["placeholder"] = (payload["placeholder"] as string) ?? "";
+    if (hostType === "TextInput" && uiProps["text"] === undefined) {
+      uiProps["text"] = (newProps["value"] as string) ?? (newProps["defaultValue"] as string) ?? "";
+      uiProps["placeholder"] = (newProps["placeholder"] as string) ?? "";
     }
     const uiId = instance.uiId;
     void enqueue(() => invoke("ui", "setProps", { id: uiId, props: uiProps }));
