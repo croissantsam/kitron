@@ -11,7 +11,7 @@ import child_process, { type ChildProcess } from "node:child_process";
 
 import type { KitronConfig } from "@kitron/core";
 
-import { log, serializeConfig, run, RUST_WORKSPACE, copyDir, buildRustStaticLib } from "./lib.ts";
+import { log, serializeConfig, run, RUST_WORKSPACE, copyDir, buildRustStaticLib, runPodInstall } from "./lib.ts";
 
 /** Launch env handed to the app binary (§22). */
 export function kitronLaunchEnv(appRoot: string, config: KitronConfig, dev: boolean) {
@@ -49,7 +49,11 @@ export function discoverProject(appRoot: string): ProjectInfo {
 /** Ensures the Rust staticlib + Kitron pod sources are current under macos/. */
 export function syncPod(appRoot: string): void {
   log.info("building Rust runtime (cargo build --release)…");
-  const staticLib = buildRustStaticLib();
+  // Cargo artifacts live in the app's own directory (survives `pnpm install`,
+  // unlike node_modules) and next to the Node host runtime.
+  const staticLib = buildRustStaticLib(
+    path.join(appRoot, ".kitron", "rust-target"),
+  );
 
   const podDir = path.join(appRoot, "macos", "Kitron");
   fs.mkdirSync(path.join(podDir, "Kitron"), { recursive: true });
@@ -100,11 +104,7 @@ export function ensurePods(appRoot: string, force = false): void {
     return;
   }
   log.info("pod install (RCT_NEW_ARCH_ENABLED=1)…");
-  const pod = run("pod", ["install"], {
-    cwd: path.join(appRoot, "macos"),
-    env: { RCT_NEW_ARCH_ENABLED: "1" },
-  });
-  if (pod.status !== 0) {
+  if (!runPodInstall(path.join(appRoot, "macos"))) {
     throw new Error("pod install failed");
   }
 }

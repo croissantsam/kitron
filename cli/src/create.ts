@@ -14,6 +14,7 @@ import {
   copyDir,
   log,
   run,
+  runPodInstall,
 } from "./lib.ts";
 
 interface CreateArgs {
@@ -85,7 +86,9 @@ function rewriteTemplate(files: string[], replacements: Array<[RegExp, string]>)
 
 /** Builds the Rust staticlib and syncs it + the Kitron pod into `macos/`. */
 export function syncKitronPod(appRoot: string): void {
-  const staticLib = buildRustStaticLib();
+  const staticLib = buildRustStaticLib(
+    path.join(appRoot, ".kitron", "rust-target"),
+  );
 
   const podDir = path.join(appRoot, "macos", "Kitron");
   fs.mkdirSync(podDir, { recursive: true });
@@ -219,6 +222,70 @@ export function vendorSdkPackages(appRoot: string, pkgRoot: string): void {
       }
     }
   }
+
+  vendorRuntime(appRoot, pkgRoot, typescript);
+}
+
+/**
+ * Vendors the Kitron *runtime* (CLI + Rust workspace + pod sources +
+ * templates) into the app, and exposes the CLI as `node_modules/.bin/kitron`.
+ *
+ * The app therefore builds against the exact runtime it ships with, and
+ * `pnpm dev` / `pnpm build` work without a global install (spec §36: the
+ * developer must be able to `cd my-app && kitron dev` right away).
+ */
+function vendorRuntime(
+  appRoot: string,
+  pkgRoot: string,
+  typescript: typeof import("typescript"),
+): void {
+  const nodeModules = path.join(appRoot, "node_modules");
+  const sdkDir = path.join(nodeModules, "@kitron", "sdk");
+  fs.rmSync(sdkDir, { recursive: true, force: true });
+  fs.mkdirSync(sdkDir, { recursive: true });
+
+  // 1. The CLI — transpiled to plain ESM (Node refuses TS under node_modules).
+  const cliDist = path.join(sdkDir, "cli", "dist");
+  transpilePackage(typescript, path.join(pkgRoot, "cli", "src"), cliDist);
+  fs.writeFileSync(
+    path.join(sdkDir, "cli", "package.json"),
+    JSON.stringify(
+      {
+        name: "@kitron/sdk-cli",
+        version: "0.1.0",
+        private: true,
+        type: "module",
+        main: "./dist/kitron.js",
+      },
+      null,
+      2,
+    ) + "\n",
+  );
+
+  // 2. The runtime sources the CLI needs to build the app: the Rust
+  //    workspace, the macOS pod, the Node host bootstrap and the templates.
+  //    The Rust `target/` directory is build output — never vendored.
+  copyDir(path.join(pkgRoot, "runtime", "rust"), path.join(sdkDir, "runtime", "rust"), {
+    ignore: ["target"],
+  });
+  copyDir(path.join(pkgRoot, "runtime", "macos"), path.join(sdkDir, "runtime", "macos"));
+  copyDir(path.join(pkgRoot, "runtime", "node"), path.join(sdkDir, "runtime", "node"));
+  copyDir(path.join(pkgRoot, "templates"), path.join(sdkDir, "templates"));
+
+  // 3. `node_modules/.bin/kitron` → the vendored CLI.
+  const binDir = path.join(nodeModules, ".bin");
+  fs.mkdirSync(binDir, { recursive: true });
+  const binPath = path.join(binDir, "kitron");
+  fs.writeFileSync(
+    binPath,
+    [
+      "#!/usr/bin/env node",
+      "// Kitron CLI vendored with the app — runs the SDK that ships with it.",
+      `import(${JSON.stringify(path.join(cliDist, "kitron.js"))});`,
+      "",
+    ].join("\n"),
+  );
+  fs.chmodSync(binPath, 0o755);
 }
 
 function loadTypescript(): typeof import("typescript") {
@@ -270,7 +337,14 @@ function transpilePackage(
     }
     const outName = name.slice(0, -3) + ".js";
     fs.mkdirSync(outDir, { recursive: true });
-    fs.writeFileSync(path.join(outDir, outName), output.outputText);
+    // The sources import with explicit `.ts` specifiers (Node's native type
+    // stripping needs them); the compiled output must point at the `.js`
+    // files instead.
+    const emitted = output.outputText.replace(
+      /((?:from|import)\s*\(?\s*["'])(\.{1,2}\/[^"']+)\.ts(["'])/g,
+      "$1$2.js$3",
+    );
+    fs.writeFileSync(path.join(outDir, outName), emitted);
   }
 }
 
@@ -362,12 +436,10 @@ export async function create(argv: string[]): Promise<number> {
     syncKitronPod(destination);
 
     log.info("pod install (this can take a few minutes)…");
-    const pod = run("pod", ["install"], {
-      cwd: path.join(destination, "macos"),
-      env: { RCT_NEW_ARCH_ENABLED: "1" },
-    });
-    if (pod.status !== 0) {
-      log.warn("pod install failed — run it manually with RCT_NEW_ARCH_ENABLED=1");
+    if (!runPodInstall(path.join(destination, "macos"))) {
+      log.warn(
+        "pod install failed — run it manually with RCT_NEW_ARCH_ENABLED=1 (transient CocoaPods CDN errors usually succeed on a retry)",
+      );
       return 1;
     }
   }

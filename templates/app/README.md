@@ -17,13 +17,25 @@ Chromium, no Electron.
 
 ## Commands
 
+The Kitron CLI ships with the app (`node_modules/.bin/kitron`), so no global
+install is needed:
+
+```sh
+pnpm dev            # Rust build + Metro + launch the app with dev env
+pnpm build          # Release .app with the backend + Node runtime bundled
+pnpm start          # Metro only (the bundler)
+pnpm doctor         # Toolchain sanity checks
+```
+
+The same commands are available through the CLI directly:
+
 ```sh
 kitron create my-app  # (already done if this folder was created for you)
-kitron dev            # Rust build + Metro + launch the app with dev env
-kitron build          # Release .app with the backend + Node runtime bundled
+kitron dev
+kitron build
 kitron package        # Wrap the Release .app into a .dmg
 kitron run            # Launch the last-built app
-kitron doctor         # Toolchain sanity checks
+kitron doctor
 ```
 
 Metro hot-reloads the UI; backend changes restart the Node host (spec §29).

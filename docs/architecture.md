@@ -189,8 +189,33 @@ process start
 
 ---
 
-## 7. Packaging (`kitron build`)
+## 7. The app bundle (`kitron create`)
 
+`kitron create` does not just copy a template — it vendors the SDK **into the
+app**, so the project is self-contained:
+
+```text
+my-app/node_modules/
+├── @kitron/core|window|node|…   # the TypeScript SDK (compiled JS + sources)
+├── kitron/                       # the umbrella package
+└── @kitron/sdk/                  # the runtime the app builds against
+    ├── cli/dist/                 # the CLI (compiled ESM)
+    ├── runtime/rust/             # the Rust workspace (sources, Cargo.lock)
+    ├── runtime/macos/pod/        # the Kitron pod sources
+    ├── runtime/node/host.mjs     # the embedded Node host bootstrap
+    └── templates/app/            # the app template
+```
+
+`node_modules/.bin/kitron` points at the vendored CLI, so `pnpm dev` and
+`pnpm build` work without a global install (spec §36). The CLI resolves its
+`SDK_ROOT` from its own location, so it always uses the vendored runtime.
+
+Cargo artifacts are written to `<app>/.kitron/rust-target` (not
+`node_modules`), so they survive a `pnpm install`.
+
+---
+
+## 8. Packaging (`kitron build`)
 1. `react-native bundle --platform macos --dev false` → `main.jsbundle`.
 2. `xcodebuild -configuration Release` → `MyApp.app`.
 3. `embedRuntimeAssets` copies into `MyApp.app/Contents/Resources`:
@@ -213,7 +238,7 @@ no Metro server.
 
 ---
 
-## 8. Threading & performance rules (§31/§32)
+## 9. Threading & performance rules (§31/§32)
 
 * JSI getters read cached snapshots — no locks on the AppKit thread from JS.
 * `nodeInvoke` (blocking) runs on a serial work queue, never on the UI thread.
@@ -225,7 +250,7 @@ no Metro server.
 
 ---
 
-## 9. Security model (§23)
+## 10. Security model (§23)
 
 * Permissions are declared in `kitron.config.ts` (`permissions: []` by default);
   sensitive APIs must be opted into explicitly.
@@ -239,7 +264,7 @@ no Metro server.
 
 ---
 
-## 10. Native API surface (phase 2)
+## 11. Native API surface (phase 2)
 
 The `KitronRuntime` TurboModule exposes the native APIs; every call returns the
 same `{ ok, result | error }` envelope, and the TS layer rehydrates the error

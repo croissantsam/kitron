@@ -79,8 +79,15 @@ const RUST_TARGETS: Record<string, string> = {
  * so a single-architecture `.a` fails to link for the other slice. When the
  * second target's standard library is unavailable we fall back to the host
  * architecture and say so — a host-only build still runs locally.
+ *
+ * `targetDir` keeps the Cargo artifacts out of `node_modules` (which
+ * `pnpm install` wipes) — the app's own build directory survives installs.
  */
-export function buildRustStaticLib(): string {
+export function buildRustStaticLib(targetDir?: string): string {
+  const cargoTargetRoot = targetDir ?? path.join(RUST_WORKSPACE, "target");
+  const cargoTarget = targetDir
+    ? { CARGO_TARGET_DIR: targetDir }
+    : ({} as Record<string, string>);
   const hostTriple = RUST_TARGETS[process.arch] ?? RUST_TARGETS.arm64!;
   const otherTriple =
     hostTriple === RUST_TARGETS.arm64 ? RUST_TARGETS.x64! : RUST_TARGETS.arm64!;
@@ -90,11 +97,10 @@ export function buildRustStaticLib(): string {
     const result = run(
       "cargo",
       ["build", "--release", "-p", "kitron-macos", "--target", triple],
-      { cwd: RUST_WORKSPACE },
+      { cwd: RUST_WORKSPACE, env: cargoTarget },
     );
     const archive = path.join(
-      RUST_WORKSPACE,
-      "target",
+      cargoTargetRoot,
       triple,
       "release",
       "libkitron_macos.a",
@@ -115,9 +121,9 @@ export function buildRustStaticLib(): string {
     return built[0]!;
   }
 
-  const outDir = path.join(RUST_WORKSPACE, "target", "kitron-universal");
-  fs.mkdirSync(outDir, { recursive: true });
-  const output = path.join(outDir, "libkitron_macos.a");
+  const universalDir = path.join(cargoTargetRoot, "kitron-universal");
+  fs.mkdirSync(universalDir, { recursive: true });
+  const output = path.join(universalDir, "libkitron_macos.a");
   const lipo = run("lipo", ["-create", "-output", output, ...built], {
     capture: true,
   });
@@ -126,6 +132,31 @@ export function buildRustStaticLib(): string {
     return built[0]!;
   }
   return output;
+}
+
+/**
+ * Runs `pod install` with retries.
+ *
+ * CocoaPods' CDN intermittently fails with "pathname contains null byte"
+ * (CocoaPods#12866) — a transient network/CDN hiccup, not a project error.
+ * Retrying a few times turns a hard failure into a short pause.
+ */
+export function runPodInstall(cwd: string, attempts = 3): boolean {
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    const pod = run("pod", ["install"], {
+      cwd,
+      env: { RCT_NEW_ARCH_ENABLED: "1" },
+    });
+    if (pod.status === 0) {
+      return true;
+    }
+    if (attempt < attempts) {
+      log.warn(`pod install failed (attempt ${attempt}/${attempts}) — retrying…`);
+      // Give the CDN a moment before the next attempt.
+      child_process.spawnSync("sleep", ["3"]);
+    }
+  }
+  return false;
 }
 
 /** Renders an unresolved config for `KITRON_CONFIG_JSON`. */
@@ -158,8 +189,18 @@ export function resolveAppRoot(maybe?: string): string {
   return path.resolve(maybe ?? process.cwd());
 }
 
-/** Copies a directory tree, preserving dotfiles (prunes nested node_modules). */
-export function copyDir(from: string, to: string): void {
+/**
+ * Copies a directory tree, preserving dotfiles (prunes nested node_modules).
+ *
+ * `ignore` lists directory names to skip anywhere in the tree (e.g. the Rust
+ * `target/` build directory).
+ */
+export function copyDir(
+  from: string,
+  to: string,
+  options: { ignore?: string[] } = {},
+): void {
+  const ignore = new Set(options.ignore ?? []);
   fs.cpSync(from, to, {
     recursive: true,
     force: true,
@@ -167,7 +208,11 @@ export function copyDir(from: string, to: string): void {
     // may legitimately live under a node_modules directory.
     filter: (source) => {
       const relative = path.relative(from, source);
-      return !relative.split(path.sep).includes("node_modules");
+      const segments = relative.split(path.sep);
+      if (segments.some((segment) => ignore.has(segment))) {
+        return false;
+      }
+      return !segments.includes("node_modules");
     },
   });
 }

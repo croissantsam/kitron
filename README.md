@@ -75,15 +75,18 @@ A call without the matching permission fails with a typed error
 node cli/src/kitron.ts create my-app
 cd my-app
 
-# 2. run it (Metro + Debug build + launch)
-node <kitron>/cli/src/kitron.ts dev
+# 2. run it — the CLI ships with the app, no global install needed
+pnpm dev              # = kitron dev: Rust build + Metro + launch
 
 # 3. build a distributable .app
-node <kitron>/cli/src/kitron.ts build
+pnpm build            # = kitron build
 ```
 
 `kitron create` generates a working app: React Native UI, a TypeScript backend,
-the Xcode project, the Rust runtime and the Kitron pod.
+the Xcode project, the Rust runtime and the Kitron pod. The CLI and the runtime
+it builds against are vendored into `node_modules/@kitron/sdk`, so the app
+always builds with the runtime it ships with — and `pnpm dev` / `pnpm build`
+work straight after the scaffold (spec §36).
 
 ### The generated app
 
