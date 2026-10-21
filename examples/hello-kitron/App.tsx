@@ -11,7 +11,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Button, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { app, backend, clipboard, KitronError, logger, shell, window } from "kitron";
+import { app, backend, clipboard, KitronError, logger, menu, shell, window } from "kitron";
 
 interface ProgressEvent {
   step: number;
@@ -63,11 +63,40 @@ export default function HelloKitronExample() {
       append(`backend.event → ${JSON.stringify(event.payload)}`);
     });
 
+    // Native menu (§18): the items are declared in TypeScript, rendered by
+    // AppKit, and their `action` ids come back as events.
+    const offMenu = menu.onAction((action) => {
+      append(`menu.action → ${action}`);
+    });
+    void menu
+      .setApplicationMenu([
+        {
+          label: "Kitron",
+          items: [
+            { label: "Run report", action: "run-report", accelerator: "CmdOrCtrl+R" },
+            { type: "separator" },
+            { label: "Copy greeting", action: "copy-greeting" },
+          ],
+        },
+        {
+          label: "Edit",
+          items: [
+            { label: "Cut", action: "edit-cut" },
+            { label: "Copy", action: "edit-copy" },
+            { label: "Paste", action: "edit-paste" },
+          ],
+        },
+      ])
+      .catch((error: unknown) => {
+        append(`menu → ${KitronError.from(error).message}`);
+      });
+
     void app.onReady().then(() => append("app.ready"));
 
     return () => {
       offProgress();
       offBackend();
+      offMenu();
     };
   }, [append]);
 

@@ -630,7 +630,6 @@ pub unsafe extern "C" fn kitron_dialog_save_file(args: *const c_char) -> *mut c_
 }
 
 /// Emits an app lifecycle event into the runtime event bus (spec §11).
-///
 /// The platform shell (Swift `AppDelegate`) calls this for the lifecycle
 /// transitions AppKit reports: `activate`, `ready`, `quit`.
 ///
@@ -659,4 +658,40 @@ pub unsafe extern "C" fn kitron_emit_app_event(name: *const c_char) -> *mut c_ch
     };
     core().emit(event, serde_json::json!({}));
     json_to_c_string(status_ok(serde_json::json!({})))
+}
+
+/// Pushes a `menu.action` event for a clicked menu item (spec §18).
+pub(crate) fn menu_emit_action(action: &str) {
+    core().emit(
+        EventName::MenuAction,
+        serde_json::json!({ "action": action }),
+    );
+}
+
+/// Drains the runtime event bus (used by the crate's integration tests).
+#[doc(hidden)]
+pub fn take_test_events() -> Vec<kitron_core::event_bus::RuntimeEvent> {
+    core().events().drain()
+}
+
+/// Installs the application menu described by the app (spec §18).
+/// Args: `[{"label":"File","items":[{"label":"New","action":"new-file"}]}]`.
+///
+/// # Safety
+///
+/// The pointer must be null or a valid NUL-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_menu_set_application_menu(definition: *const c_char) -> *mut c_char {
+    let raw = if definition.is_null() {
+        "[]".to_string()
+    } else {
+        unsafe { CStr::from_ptr(definition) }.to_string_lossy().into_owned()
+    };
+    match menu::set_application_menu(&raw) {
+        Ok(()) => json_to_c_string(status_ok(serde_json::json!({}))),
+        Err(message) => {
+            let error = KitronError::code("MENU_INVALID_DEFINITION", message);
+            json_to_c_string(status_err(&error))
+        }
+    }
 }

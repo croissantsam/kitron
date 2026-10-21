@@ -52,6 +52,7 @@ export interface KitronNativeModule {
   dialogMessage(argsJSON: string): Promise<string>;
   dialogOpenFile(argsJSON: string): Promise<string>;
   dialogSaveFile(argsJSON: string): Promise<string>;
+  menuSetApplicationMenu(definitionJSON: string): Promise<string>;
 }
 
 type TurboModuleProxy = {

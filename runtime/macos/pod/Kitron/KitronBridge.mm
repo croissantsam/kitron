@@ -323,6 +323,13 @@ RCT_EXPORT_METHOD(dialogSaveFile:(NSString *)argsJSON
   resolve(KitronCopyAndFree(kitron_dialog_save_file(argsJSON.UTF8String ?: "{}")));
 }
 
+RCT_EXPORT_METHOD(menuSetApplicationMenu:(NSString *)definitionJSON
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  resolve(KitronCopyAndFree(
+      kitron_menu_set_application_menu(definitionJSON.UTF8String ?: "[]")));
+}
+
 @end
 
 // ---------------------------------------------------------------------------

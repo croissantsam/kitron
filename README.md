@@ -45,8 +45,9 @@ menus, lifecycle, IPC supervision) is written in Rust.
 | `clipboard`        | `NSPasteboard`                                | ✅ |
 | `dialog`           | `NSAlert` / `NSOpenPanel` / `NSSavePanel`     | ✅ |
 | `shell`            | `NSWorkspace`                                 | ✅ |
+| `menu`             | `NSMenu` (declarative, actions back to JS)    | ✅ |
 | `app.activate` / `app.quit` | `NSApplication` lifecycle               | ✅ |
-| `menu` / `tray` / `notification` / `process` / `shortcut` / `updater` | — | 🚧 typed `KITRON_PHASE2` stubs |
+| `tray` / `notification` / `process` / `shortcut` / `updater` | — | 🚧 typed `KITRON_PHASE2` stubs |
 
 ### Permissions (§23)
 

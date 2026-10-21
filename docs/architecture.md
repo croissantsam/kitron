@@ -254,6 +254,7 @@ into a `KitronError` (spec §33).
 | `shell.openUrl`         | `kitron_shell_open_url`        | `NSWorkspace`                     | `shell`    |
 | `shell.openPath`        | `kitron_shell_open_path`       | `NSWorkspace`                     | `shell`    |
 | `shell.showItemInFolder`| `kitron_shell_show_item_in_folder` | `NSWorkspace`                 | `shell`    |
+| `menu.setApplicationMenu` | `kitron_menu_set_application_menu` | `NSMenu`                | —          |
 
 AppKit is `MainThreadOnly`, so these calls run on the module's main queue. The
 panels are modal — the promise settles once the user dismisses them.
@@ -262,3 +263,24 @@ App lifecycle events (`app.activate`, `app.quit`) are pushed by the platform
 shell: the Swift `AppDelegate` calls `KitronEmitAppEvent("activate")`, which
 goes through `kitron_emit_app_event` into the core event bus and out to JS
 through the regular event pump.
+
+### Menus (§18)
+
+The menu is declared in TypeScript and installed natively:
+
+```ts
+menu.setApplicationMenu([
+  { label: "File", items: [{ label: "New", action: "new-file", accelerator: "CmdOrCtrl+N" }] },
+]);
+menu.onAction((action) => { /* "new-file" */ });
+```
+
+On the native side each item with an `action` gets
+
+* the selector `kitronMenuItemClicked:`,
+* a shared `MenuTarget` object as its target,
+* a `tag` that indexes a registry of action ids.
+
+When AppKit dispatches the click, the target reads the tag, looks the action id
+up and pushes a `menu.action` event into the core event bus — the same bus the
+UI reads through the regular event pump.

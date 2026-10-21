@@ -26,6 +26,7 @@ pub enum EventName {
     NodeStopping,
     NodeExited,
     NodeEvent,
+    MenuAction,
 }
 
 impl EventName {
@@ -49,6 +50,7 @@ impl EventName {
             Self::NodeStopping => "node.stopping",
             Self::NodeExited => "node.exited",
             Self::NodeEvent => "backend.event",
+            Self::MenuAction => "menu.action",
         }
     }
 }

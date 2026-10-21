@@ -1,11 +1,11 @@
 /**
  * Phase-2 SDK namespaces (spec §42).
  *
- * `clipboard`, `dialog` and `shell` are implemented natively on macOS
- * (`NSPasteboard`, `NSAlert`/`NSOpenPanel`/`NSSavePanel`, `NSWorkspace`).
- * The remaining ones (menu, tray, notification, process, shortcut, updater)
- * are reserved by the runtime but land after the MVP gate (spec §41) — they
- * throw a typed `KITRON_PHASE2` error so apps can feature-detect.
+ * `clipboard`, `dialog`, `shell` and `menu` are implemented natively on macOS
+ * (`NSPasteboard`, `NSAlert`/`NSOpenPanel`/`NSSavePanel`, `NSWorkspace`,
+ * `NSMenu`). The remaining ones (tray, notification, process, shortcut,
+ * updater) are reserved by the runtime but land after the MVP gate (spec §41)
+ * — they throw a typed `KITRON_PHASE2` error so apps can feature-detect.
  */
 
 export { dialog } from "@kitron/dialog";
@@ -20,6 +20,8 @@ export type {
 } from "@kitron/dialog";
 export { clipboard } from "@kitron/clipboard";
 export { shell } from "@kitron/shell";
+export { menu } from "@kitron/menu";
+export type { MenuDefinition, MenuItemDefinition } from "@kitron/menu";
 
 import { KitronError } from "@kitron/core";
 
@@ -31,11 +33,6 @@ function phase2(feature: string): never {
       "Track progress on the Kitron roadmap; feature-detect with try/catch.",
   });
 }
-
-export const menu = {
-  create: (_definition: unknown) => phase2("menu.create"),
-  setApplicationMenu: (_definition: unknown) => phase2("menu.setApplicationMenu"),
-};
 
 export const tray = {
   create: (_options: unknown) => phase2("tray.create"),

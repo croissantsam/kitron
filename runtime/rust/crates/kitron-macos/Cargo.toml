@@ -27,3 +27,9 @@ workspace = true
 [lib]
 name = "kitron_macos"
 crate-type = ["staticlib", "rlib"]
+
+# The menu test drives AppKit, which is main-thread only: the test binary runs
+# its own `main()` on the process' main thread instead of the default harness.
+[[test]]
+name = "menu"
+harness = false

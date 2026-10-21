@@ -29,7 +29,8 @@ export type KitronEventName =
   | "node.log"
   | "node.stopping"
   | "node.exited"
-  | "backend.event";
+  | "backend.event"
+  | "menu.action";
 
 /** `window.*` events carry `windowId`; `node.log` carries level/message etc. */
 export type KitronEvent = {

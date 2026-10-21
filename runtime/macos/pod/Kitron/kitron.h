@@ -106,6 +106,10 @@ char *kitron_dialog_open_file(const char *args_json);
 /// Result: {canceled, path}.
 char *kitron_dialog_save_file(const char *args_json);
 
+/// Menus (spec §18): installs the application menu described by the app.
+/// Args: [{"label":"File","items":[{"label":"New","action":"new-file"}]}].
+char *kitron_menu_set_application_menu(const char *definition_json);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif
