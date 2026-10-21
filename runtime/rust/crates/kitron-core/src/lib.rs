@@ -1,0 +1,148 @@
+//! Platform-neutral Kitron runtime core (spec §40: `runtime/rust`).
+//!
+//! Responsibilities (spec §7):
+//! - app lifecycle state hooks
+//! - runtime events bus shared by platform shells and the Node supervisor
+//! - unified logger (spec §34)
+//! - configuration loading (spec §37)
+//! - embedded Node.js backend supervision (spec §28/§29)
+//!
+//! Platform-specific behavior lives in shell crates (`kitron-macos` today,
+//! `kitron-windows` in phase 4). They call into this crate; this crate never
+//! touches AppKit/Win32 so the core stays portable and testable.
+
+use std::sync::{Arc, Mutex, atomic::AtomicBool};
+
+use kitron_protocol::{KitronConfig, KitronError};
+
+pub mod config_loader;
+pub mod event_bus;
+pub mod logger;
+pub mod node;
+
+pub use event_bus::{EventName, RuntimeEvent};
+pub use logger::SharedLogger;
+
+/// The runtime core instance shared between the platform shell, the JSI bridge
+/// and the Node supervisor.
+pub struct Core {
+    pub config: KitronConfig,
+    /// Absolute path the app runs from (project root in dev, bundle Resources
+    /// in production).
+    pub root_dir: String,
+    /// `true` when launched by `kitron dev`.
+    pub dev_mode: bool,
+    pub logger: Arc<SharedLogger>,
+    events: Arc<event_bus::EventBus>,
+    node: Mutex<Option<Arc<kitron_node_supervisor::NodeSupervisor>>>,
+    /// Set by the platform shell when termination has been requested
+    /// (`applicationShouldTerminate`).
+    pub termination_requested: AtomicBool,
+    /// Set by the bridge when JS vetoed termination (spec §11 moment).
+    pub termination_cancelled: AtomicBool,
+}
+
+impl Core {
+    /// Builds the core from process-environment inputs provided by the CLI or
+    /// the embedded bootstrap. This is the single constructor used in
+    /// production and tests.
+    pub fn from_env() -> Self {
+        let config = config_loader::load_config_from_env();
+        let root_dir = std::env::var("KITRON_ROOT")
+            .or_else(|_| std::env::current_dir().map(|cwd| cwd.display().to_string()))
+            .unwrap_or_else(|_| ".".to_string());
+        let dev_mode = matches!(std::env::var("KITRON_DEV").as_deref(), Ok("1" | "true"));
+        Self {
+            logger: Arc::new(SharedLogger::new(&config.app.name)),
+            config,
+            root_dir,
+            dev_mode,
+            events: Arc::new(event_bus::EventBus::new()),
+            node: Mutex::new(None),
+            termination_requested: AtomicBool::new(false),
+            termination_cancelled: AtomicBool::new(false),
+        }
+    }
+
+    pub fn events_handle(&self) -> Arc<event_bus::EventBus> {
+        self.events.clone()
+    }
+
+    pub fn events(&self) -> &event_bus::EventBus {
+        &self.events
+    }
+
+    pub fn emit(&self, name: EventName, payload: serde_json::Value) {
+        self.events.push(name, payload);
+    }
+
+    /// App-lifecycle helper (spec §11): mark termination as requested.
+    pub fn request_termination(&self) {
+        self.termination_requested
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.emit(EventName::AppBeforeQuit, serde_json::json!({}));
+    }
+
+    /// JS vetoes a pending termination (`app.preventDefaultExit()`).
+    pub fn cancel_termination(&self) {
+        self.termination_cancelled
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    /// Whether the platform shell should proceed with exiting.
+    pub fn should_terminate(&self) -> bool {
+        !(self.termination_cancelled.load(std::sync::atomic::Ordering::SeqCst))
+    }
+
+    // -- Node backend lifecycle (spec §28) -----------------------------------
+
+    /// Starts (or returns the existing) embedded Node backend. No-op error
+    /// when the config lacks `node.entry` or `node.autoStart === false`.
+    pub fn start_node_from_config(&self) -> Result<Arc<kitron_node_supervisor::NodeSupervisor>, KitronError> {
+        if let Some(sup) = self.node.lock().unwrap().clone() {
+            return Ok(sup);
+        }
+        let entry = match self.config.node.entry.as_deref() {
+            e if e.is_some_and(|p| !p.is_empty()) => e.unwrap().to_string(),
+            _ => {
+                return Err(KitronError::code(
+                    "NODE_NOT_CONFIGURED",
+                    "kitron.config.ts has no node.entry",
+                ));
+            }
+        };
+        if !self.config.node.auto_start {
+            return Err(KitronError::code(
+                "NODE_AUTO_START_DISABLED",
+                "node.autoStart is disabled in the app config",
+            ));
+        }
+
+        let opts = node::spawn_options_from_env(self, &entry);
+        let supervisor =
+            kitron_node_supervisor::NodeSupervisor::spawn(&opts).map_err(|e| {
+                self.logger.error("node", &format!("spawn failed: {}", e.message));
+                e
+            })?;
+        let supervisor = Arc::new(supervisor);
+        *self.node.lock().unwrap() = Some(supervisor.clone());
+
+        self.emit(EventName::NodeStarted, serde_json::json!({
+            "pid": supervisor.status().pid,
+        }));
+        // Relay supervisor events into the runtime bus for the bridge pump.
+        node::spawn_event_relayer(self, supervisor.clone())?;
+        Ok(supervisor)
+    }
+
+    pub fn node_supervisor(&self) -> Option<Arc<kitron_node_supervisor::NodeSupervisor>> {
+        self.node.lock().unwrap().clone()
+    }
+
+    pub fn stop_node(&self, reason: &str) {
+        if let Some(sup) = self.node_supervisor() {
+            self.emit(EventName::NodeStopping, serde_json::json!({ "reason": reason }));
+            sup.stop(reason);
+        }
+    }
+}

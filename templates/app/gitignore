@@ -1,0 +1,10 @@
+node_modules/
+macos/Pods/
+macos/build/
+*.xcodeproj/*.xcuserstate
+xcuserdata/
+.bundle/
+npm-debug.log*
+yarn-error.log*
+.DS_Store
+/app/build

@@ -1,0 +1,30 @@
+{
+  "name": "HelloKitron",
+  "version": "0.1.0",
+  "private": true,
+  "description": "A Kitron desktop app (React Native UI + Node.js backend + Rust core).",
+  "scripts": {
+    "start": "react-native start",
+    "dev": "kitron dev",
+    "build": "kitron build",
+    "doctor": "kitron doctor"
+  },
+  "dependencies": {
+    "@babel/runtime": "^7.28.4",
+    "react": "^19.2.0",
+    "react-native": "0.83.10",
+    "react-native-macos": "0.83.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.28.4",
+    "@react-native-community/cli": "^20.0.2",
+    "@react-native-community/cli-platform-ios": "^20.0.2",
+    "@react-native/babel-preset": "0.83.10",
+    "@react-native/metro-config": "0.83.10",
+    "@react-native/typescript-config": "0.83.10",
+    "typescript": "^5.9.0"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

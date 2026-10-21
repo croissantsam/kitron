@@ -1,0 +1,27 @@
+{
+  "name": "kitron",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Desktop runtime for React Native + TypeScript + Node.js apps, powered by native Rust — without Chromium.",
+  "license": "MIT",
+  "packageManager": "pnpm@11.21.0",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "bin": {
+    "kitron": "./cli/src/kitron.ts"
+  },
+  "scripts": {
+    "kitron": "node cli/src/kitron.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "bash tests/run.sh",
+    "doctor": "node cli/src/kitron.ts doctor",
+    "build:rust": "cargo build --release -p kitron-macos --manifest-path runtime/rust/Cargo.toml",
+    "test:rust": "cargo test --manifest-path runtime/rust/Cargo.toml"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^5.9.3"
+  }
+}

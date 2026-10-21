@@ -1,0 +1,29 @@
+# Node
+node_modules/
+.turbo/
+*.tsbuildinfo
+dist/
+
+# Rust
+target/
+**/target/
+
+# Xcode / React Native artifacts
+*.xcodebuild
+Pods/
+DerivedData/
+.kitron/
+bundle/
+*.app
+*.jsbundle
+
+# Test app build outputs
+examples/*/ios/
+examples/*/android/
+examples/*/windows/
+examples/*/macos/Generated/
+examples/.hello-kitron-app/
+
+# OS
+.DS_Store
+*.log

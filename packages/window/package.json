@@ -1,0 +1,18 @@
+{
+  "name": "@kitron/window",
+  "version": "0.1.0",
+  "description": "Kitron window API: create, focus, frame, multi-window management",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@kitron/core": "workspace:*"
+  }
+}

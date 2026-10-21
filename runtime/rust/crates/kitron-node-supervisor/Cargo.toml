@@ -1,0 +1,12 @@
+[package]
+name = "kitron-node-supervisor"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Spawns and supervises the embedded Node.js backend process"
+
+[dependencies]
+kitron-protocol.workspace = true
+serde = { workspace = true }
+serde_json.workspace = true

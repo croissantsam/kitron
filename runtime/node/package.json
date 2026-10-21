@@ -1,0 +1,12 @@
+{
+  "name": "@kitron/node-host",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kitron embedded Node.js host bootstrap (loaded by the Rust supervisor)",
+  "type": "module",
+  "main": "host.mjs",
+  "engines": {
+    "node": ">=24"
+  },
+  "license": "MIT"
+}

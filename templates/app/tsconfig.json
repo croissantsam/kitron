@@ -1,0 +1,8 @@
+{
+  "extends": "@react-native/typescript-config/tsconfig.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "target": "ES2023"
+  },
+  "include": ["index.ts", "App.tsx", "backend", "kitron.config.ts"]
+}

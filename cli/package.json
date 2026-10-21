@@ -1,0 +1,18 @@
+{
+  "name": "@kitron/cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kitron CLI: create/dev/build/run/doctor (spec §37).",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "kitron": "./src/kitron.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@kitron/core": "workspace:*",
+    "typescript": "^5.9.0"
+  }
+}

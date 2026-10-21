@@ -1,0 +1,13 @@
+[package]
+name = "kitron-core"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Platform-neutral Kitron runtime core: config, events, unified logging, node supervision"
+
+[dependencies]
+kitron-protocol.workspace = true
+kitron-node-supervisor = { workspace = true }
+serde_json.workspace = true
+serde.workspace = true

@@ -1,0 +1,29 @@
+{
+  "name": "kitron",
+  "version": "0.1.0",
+  "description": "Kitron desktop runtime SDK — `import { app, window, backend } from \"kitron\"`",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@kitron/clipboard": "workspace:*",
+    "@kitron/core": "workspace:*",
+    "@kitron/dialog": "workspace:*",
+    "@kitron/menu": "workspace:*",
+    "@kitron/node": "workspace:*",
+    "@kitron/notification": "workspace:*",
+    "@kitron/process": "workspace:*",
+    "@kitron/shell": "workspace:*",
+    "@kitron/shortcut": "workspace:*",
+    "@kitron/tray": "workspace:*",
+    "@kitron/updater": "workspace:*",
+    "@kitron/window": "workspace:*"
+  }
+}

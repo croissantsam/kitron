@@ -1,0 +1,40 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/croissantlabs/kitron"
+
+[workspace.dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# AppKit / macOS (official objc2 crates)
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "NSApplication",
+  "NSWindow",
+  "NSResponder",
+  "NSMenu",
+  "NSMenuItem",
+  "NSScreen",
+  "NSEvent",
+  "NSGraphics",
+  "NSRunningApplication",
+] }
+objc2-foundation = { version = "0.3", default-features = false, features = [
+  "std",
+  "NSString",
+  "NSNotification",
+  "NSObject",
+  "objc2-core-foundation",
+] }
+
+kitron-protocol = { version = "0.1.0", path = "crates/kitron-protocol" }
+kitron-core = { version = "0.1.0", path = "crates/kitron-core" }
+kitron-node-supervisor = { version = "0.1.0", path = "crates/kitron-node-supervisor" }
+kitron-macos = { version = "0.1.0", path = "crates/kitron-macos" }

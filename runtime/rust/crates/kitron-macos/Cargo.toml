@@ -1,0 +1,26 @@
+[package]
+name = "kitron-macos"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Native macOS shell for the Kitron runtime: AppKit windows, menus, lifecycle"
+
+[dependencies]
+kitron-protocol.workspace = true
+kitron-core.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dependencies.objc2]
+workspace = true
+
+[dependencies.objc2-app-kit]
+workspace = true
+
+[dependencies.objc2-foundation]
+workspace = true
+
+[lib]
+name = "kitron_macos"
+crate-type = ["staticlib", "rlib"]
