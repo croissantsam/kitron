@@ -77,16 +77,30 @@ export class KitronError extends Error {
   }
 }
 
-/** Native replying with a `{ ok: false, error: {...} }` envelope. */
+/**
+ * Native replying with a `{ ok: false, error: {...} }` envelope.
+ *
+ * The native module returns the envelope as a JSON *string*; both shapes are
+ * accepted so callers can pass the raw reply straight through.
+ */
 export function throwIfFailed(envelope: unknown): void {
+  let value: unknown = envelope;
+  if (typeof value === "string") {
+    try {
+      value = JSON.parse(value);
+    } catch {
+      // Not an envelope — nothing to unwrap.
+      return;
+    }
+  }
   if (
-    typeof envelope === "object" &&
-    envelope !== null &&
-    "ok" in envelope &&
-    (envelope as { ok: boolean }).ok === false
+    typeof value === "object" &&
+    value !== null &&
+    "ok" in value &&
+    (value as { ok: boolean }).ok === false
   ) {
     throw KitronError.from(
-      (envelope as unknown as { error?: unknown }).error,
+      (value as unknown as { error?: unknown }).error,
     );
   }
 }

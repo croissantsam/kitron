@@ -7,6 +7,7 @@ Demonstrates the three runtime surfaces of a Kitron app:
 | `app`              | JSI → Rust               | process identity, lifecycle events              |
 | `backend`          | typed IPC → Node.js      | `backend.invoke`, `backend.emit`                |
 | `window`           | Rust → AppKit            | native multi-window management                  |
+| `clipboard`/`shell`| Rust → AppKit            | phase-2 native APIs, permission-gated (§23)     |
 
 ## Run it
 
@@ -30,6 +31,9 @@ Xcode project and runs `pod install`) and then overlays this example's
 * **Open a window** creates a second native `NSWindow` through the Rust core.
 * **Run report** streams `report.progress` events from the Node backend to the
   UI.
+* **Copy greeting** round-trips the system clipboard (`NSPasteboard`), and
+  **Open the docs** hands a URL to the OS handler (`NSWorkspace`) — both need
+  the matching entry in `permissions` (§23).
 * The app log (`kitron dev`) shows the unified log stream:
 
   ```text

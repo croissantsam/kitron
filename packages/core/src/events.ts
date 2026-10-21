@@ -13,6 +13,7 @@ import type { KitronErrorShape } from "./error.js";
 
 export type KitronEventName =
   | "app.ready"
+  | "app.activate"
   | "app.beforeQuit"
   | "app.quit"
   | "window.created"

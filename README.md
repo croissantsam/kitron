@@ -38,6 +38,33 @@ menus, lifecycle, IPC supervision) is written in Rust.
 | 9 | macOS works                                          | ✅ AppKit / Foundation |
 |10 | An app can be packaged                               | ✅ `kitron build` → `.app` with embedded JS bundle + backend + Node |
 
+### Phase 2 (§42) — first batch landed
+
+| API                | Native backing                                | Status |
+|--------------------|-----------------------------------------------|--------|
+| `clipboard`        | `NSPasteboard`                                | ✅ |
+| `dialog`           | `NSAlert` / `NSOpenPanel` / `NSSavePanel`     | ✅ |
+| `shell`            | `NSWorkspace`                                 | ✅ |
+| `app.activate` / `app.quit` | `NSApplication` lifecycle               | ✅ |
+| `menu` / `tray` / `notification` / `process` / `shortcut` / `updater` | — | 🚧 typed `KITRON_PHASE2` stubs |
+
+### Permissions (§23)
+
+Native APIs are never implicitly granted. An app declares what it needs in
+`kitron.config.ts` and the **native layer** enforces it:
+
+```ts
+export default {
+  app: { name: "My App", identifier: "com.example.myapp", version: "1.0.0" },
+  window: { width: 1200, height: 800 },
+  node: { entry: "./backend/index.ts" },
+  permissions: ["clipboard", "dialog", "shell"],
+};
+```
+
+A call without the matching permission fails with a typed error
+(`{ code: "PERMISSION_DENIED", … }`) — it cannot be bypassed from JavaScript.
+
 ---
 
 ## Quick start

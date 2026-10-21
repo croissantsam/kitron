@@ -22,6 +22,11 @@ const config: KitronConfig = {
     entry: "./backend/index.ts",
     autoStart: true,
   },
+  // Sensitive native APIs are opt-in (spec §23) — nothing is granted by
+  // default. Add a permission only when the app really needs it:
+  //   "clipboard" — read/write the system clipboard
+  //   "dialog"    — native message boxes and file panels
+  //   "shell"     — open URLs/files with the default handler
   permissions: [],
   extra: {},
 };

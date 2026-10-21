@@ -22,7 +22,8 @@ const config: KitronConfig = {
     entry: "./backend/index.ts",
     autoStart: true,
   },
-  permissions: [],
+  // Sensitive native APIs are opt-in (§23).
+  permissions: ["clipboard", "shell"],
   extra: {},
 };
 

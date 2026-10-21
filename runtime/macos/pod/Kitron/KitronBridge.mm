@@ -268,7 +268,72 @@ RCT_EXPORT_METHOD(nodeInvoke:(NSString *)method
   });
 }
 
+// ---------------------------------------------------------------------------
+// Phase-2 native APIs (spec §42) — clipboard, shell, dialogs
+// ---------------------------------------------------------------------------
+
+RCT_EXPORT_METHOD(clipboardRead:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  resolve(KitronCopyAndFree(kitron_clipboard_read()));
+}
+
+RCT_EXPORT_METHOD(clipboardWrite:(NSString *)text
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  NSString *value = [text copy] ?: @"";
+  resolve(KitronCopyAndFree(kitron_clipboard_write(value.UTF8String)));
+}
+
+RCT_EXPORT_METHOD(shellOpenUrl:(NSString *)url
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  NSString *value = [url copy] ?: @"";
+  resolve(KitronCopyAndFree(kitron_shell_open_url(value.UTF8String)));
+}
+
+RCT_EXPORT_METHOD(shellOpenPath:(NSString *)path
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  NSString *value = [path copy] ?: @"";
+  resolve(KitronCopyAndFree(kitron_shell_open_path(value.UTF8String)));
+}
+
+RCT_EXPORT_METHOD(shellShowItemInFolder:(NSString *)path
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  NSString *value = [path copy] ?: @"";
+  resolve(KitronCopyAndFree(kitron_shell_show_item_in_folder(value.UTF8String)));
+}
+
+RCT_EXPORT_METHOD(dialogMessage:(NSString *)argsJSON
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  resolve(KitronCopyAndFree(kitron_dialog_message(argsJSON.UTF8String ?: "{}")));
+}
+
+RCT_EXPORT_METHOD(dialogOpenFile:(NSString *)argsJSON
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  resolve(KitronCopyAndFree(kitron_dialog_open_file(argsJSON.UTF8String ?: "{}")));
+}
+
+RCT_EXPORT_METHOD(dialogSaveFile:(NSString *)argsJSON
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  resolve(KitronCopyAndFree(kitron_dialog_save_file(argsJSON.UTF8String ?: "{}")));
+}
+
 @end
+
+// ---------------------------------------------------------------------------
+// Swift-facing helpers (the app's AppDelegate drives the lifecycle)
+// ---------------------------------------------------------------------------
+
+void KitronEmitAppEvent(NSString *name) {
+  NSString *value = [name copy] ?: @"";
+  char *response = kitron_emit_app_event(value.UTF8String);
+  KitronCopyAndFree(response);
+}
 
 // ---------------------------------------------------------------------------
 // KitronRuntimeDelegate — injects the __kitron JSI host object

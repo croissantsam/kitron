@@ -70,6 +70,42 @@ char *kitron_snapshot_json(void);
 /// Main thread only (refreshes window snapshots touching AppKit).
 char *kitron_events_drain(void);
 
+/// Emits an app lifecycle event ("activate" | "ready" | "beforeQuit" | "quit")
+/// into the runtime event bus. Called by the platform shell.
+char *kitron_emit_app_event(const char *name);
+
+/* ---------------------------------------------------------------------------
+ * Phase-2 native APIs (spec §42). Each one is gated by an explicit
+ * permission declared in kitron.config.ts (spec §23).
+ * ------------------------------------------------------------------------- */
+
+/// Clipboard (spec §13): result = {"text": "…"}.
+char *kitron_clipboard_read(void);
+
+/// Clipboard (spec §13): writes `text` to the general pasteboard.
+char *kitron_clipboard_write(const char *text);
+
+/// Shell (spec §15): opens a URL with the default handler.
+char *kitron_shell_open_url(const char *url);
+
+/// Shell (spec §15): opens a file or folder with the default handler.
+char *kitron_shell_open_path(const char *path);
+
+/// Shell (spec §15): reveals a file in Finder.
+char *kitron_shell_show_item_in_folder(const char *path);
+
+/// Dialogs (spec §12): message box. Args: {title,message,detail,buttons,style}.
+/// Result: {button, index, confirmed}.
+char *kitron_dialog_message(const char *args_json);
+
+/// Dialogs (spec §12): file picker. Args: {title,multiple,directory,extensions}.
+/// Result: {canceled, paths}.
+char *kitron_dialog_open_file(const char *args_json);
+
+/// Dialogs (spec §12): save panel. Args: {title,defaultName,directory}.
+/// Result: {canceled, path}.
+char *kitron_dialog_save_file(const char *args_json);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

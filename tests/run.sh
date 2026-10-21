@@ -43,6 +43,13 @@ else
   fail "node host smoke failed"
 fi
 
+step "sdk smoke (typed errors + namespaces outside a native runtime)"
+if node --experimental-strip-types --disable-warning=ExperimentalWarning tests/sdk-smoke.mjs; then
+  echo "  sdk: PASS"
+else
+  fail "sdk smoke failed"
+fi
+
 step "CLI e2e: kitron create scaffolds a runnable app"
 SCAFFOLD_ROOT="$(mktemp -d)"
 SCAFFOLD_APP="$SCAFFOLD_ROOT/scaffolded-app"

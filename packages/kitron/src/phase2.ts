@@ -1,18 +1,62 @@
 /**
- * Phase-2 SDK namespaces (spec §42) — reserved by the runtime, implemented
- * after the MVP gate (spec §41).
+ * Phase-2 SDK namespaces (spec §42).
  *
- * They live in their own `@kitron/*` packages (spec §24); this module
- * re-exports them from the umbrella package so apps can import everything
- * from `kitron`.
+ * `clipboard`, `dialog` and `shell` are implemented natively on macOS
+ * (`NSPasteboard`, `NSAlert`/`NSOpenPanel`/`NSSavePanel`, `NSWorkspace`).
+ * The remaining ones (menu, tray, notification, process, shortcut, updater)
+ * are reserved by the runtime but land after the MVP gate (spec §41) — they
+ * throw a typed `KITRON_PHASE2` error so apps can feature-detect.
  */
 
 export { dialog } from "@kitron/dialog";
+export type {
+  DialogStyle,
+  MessageOptions,
+  MessageResult,
+  OpenFileOptions,
+  OpenFileResult,
+  SaveFileOptions,
+  SaveFileResult,
+} from "@kitron/dialog";
 export { clipboard } from "@kitron/clipboard";
-export { menu } from "@kitron/menu";
-export { tray } from "@kitron/tray";
-export { notification } from "@kitron/notification";
-export { process } from "@kitron/process";
 export { shell } from "@kitron/shell";
-export { shortcut } from "@kitron/shortcut";
-export { updater } from "@kitron/updater";
+
+import { KitronError } from "@kitron/core";
+
+function phase2(feature: string): never {
+  throw new KitronError({
+    code: "KITRON_PHASE2",
+    message:
+      `${feature} ships after the MVP gate (spec §41). ` +
+      "Track progress on the Kitron roadmap; feature-detect with try/catch.",
+  });
+}
+
+export const menu = {
+  create: (_definition: unknown) => phase2("menu.create"),
+  setApplicationMenu: (_definition: unknown) => phase2("menu.setApplicationMenu"),
+};
+
+export const tray = {
+  create: (_options: unknown) => phase2("tray.create"),
+};
+
+export const notification = {
+  show: (_options: unknown) => phase2("notification.show"),
+};
+
+export const process = {
+  env: (_name: string) => phase2("process.env"),
+  spawn: (_options: unknown) => phase2("process.spawn"),
+};
+
+export const shortcut = {
+  register: (_accelerator: string, _handler: () => void) =>
+    phase2("shortcut.register"),
+  unregister: (_accelerator: string) => phase2("shortcut.unregister"),
+};
+
+export const updater = {
+  check: () => phase2("updater.check"),
+  download: () => phase2("updater.download"),
+};

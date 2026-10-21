@@ -21,6 +21,9 @@ workspace = true
 [dependencies.objc2-foundation]
 workspace = true
 
+[dependencies.objc2-uniform-type-identifiers]
+workspace = true
+
 [lib]
 name = "kitron_macos"
 crate-type = ["staticlib", "rlib"]

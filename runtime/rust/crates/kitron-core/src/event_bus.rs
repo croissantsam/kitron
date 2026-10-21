@@ -9,6 +9,7 @@ use std::sync::Mutex;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum EventName {
     AppReady,
+    AppActivate,
     AppBeforeQuit,
     AppQuit,
     WindowCreated,
@@ -31,6 +32,7 @@ impl EventName {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::AppReady => "app.ready",
+            Self::AppActivate => "app.activate",
             Self::AppBeforeQuit => "app.beforeQuit",
             Self::AppQuit => "app.quit",
             Self::WindowCreated => "window.created",

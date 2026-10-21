@@ -16,7 +16,15 @@ serde_json = "1"
 # AppKit / macOS (official objc2 crates)
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = [
+  "NSAlert",
   "NSApplication",
+  "NSButton",
+  "NSControl",
+  "NSOpenPanel",
+  "NSPanel",
+  "NSPasteboard",
+  "NSSavePanel",
+  "NSView",
   "NSWindow",
   "NSResponder",
   "NSMenu",
@@ -25,14 +33,24 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
   "NSEvent",
   "NSGraphics",
   "NSRunningApplication",
+  "NSWorkspace",
+  "objc2-uniform-type-identifiers",
 ] }
 objc2-foundation = { version = "0.3", default-features = false, features = [
   "std",
+  "NSArray",
+  "NSEnumerator",
   "NSString",
   "NSNotification",
   "NSObject",
+  "NSURL",
   "objc2-core-foundation",
 ] }
+
+# Pinned to the 0.3 line: it is the release that pairs with the objc2 0.6
+# family used by objc2-app-kit 0.3 (0.2 would pull a second objc2 into the
+# graph and the types would not line up).
+objc2-uniform-type-identifiers = { version = "0.3", default-features = false }
 
 kitron-protocol = { version = "0.1.0", path = "crates/kitron-protocol" }
 kitron-core = { version = "0.1.0", path = "crates/kitron-core" }

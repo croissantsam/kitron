@@ -31,6 +31,11 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)installIntoRuntime:(void *)runtime;
 @end
 
+/// Forwards an app lifecycle event ("activate", "ready", "beforeQuit", "quit")
+/// into the runtime event bus so `app.on(...)` receives it (spec §11).
+/// Called by the platform shell (the app's `AppDelegate`).
+FOUNDATION_EXPORT void KitronEmitAppEvent(NSString *name);
+
 /// Application bootstrap. Pre-creates `RCTHost` (so Kitron can hook the JSI
 /// runtime before engine start), creates the main native window through the
 /// Rust core, then hands the window to the React Native factory.

@@ -10,7 +10,10 @@
 //! at the bottom of this file. Every mutating call returns a JSON envelope:
 //! `{"ok": true, "result": ...}` / `{"ok": false, "error": {...}}` (spec §33).
 
+pub mod clipboard;
+pub mod dialog;
 pub mod menu;
+pub mod shell;
 pub mod window;
 
 use std::collections::BTreeMap;
@@ -480,4 +483,180 @@ pub unsafe extern "C" fn kitron_events_drain() -> *mut c_char {
         })
         .collect();
     json_to_c_string(status_ok(serde_json::json!(events)))
+}
+
+// ---------------------------------------------------------------------------
+// Phase-2 native APIs (spec §42): clipboard, shell, dialogs
+// ---------------------------------------------------------------------------
+
+/// Reads the clipboard as text (spec §13). Requires the `clipboard` permission.
+///
+/// # Safety
+///
+/// Safe to call from any thread; the implementation hops to the main thread
+/// requirement internally and returns a typed error when it cannot.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_clipboard_read() -> *mut c_char {
+    match clipboard::read_text() {
+        Ok(text) => json_to_c_string(status_ok(serde_json::json!({ "text": text }))),
+        Err(e) => json_to_c_string(status_err(&e)),
+    }
+}
+
+/// Writes text to the clipboard (spec §13). Requires the `clipboard` permission.
+///
+/// # Safety
+///
+/// The pointer must be null or a valid NUL-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_clipboard_write(text: *const c_char) -> *mut c_char {
+    let value = if text.is_null() {
+        String::new()
+    } else {
+        unsafe { CStr::from_ptr(text) }.to_string_lossy().into_owned()
+    };
+    match clipboard::write_text(&value) {
+        Ok(()) => json_to_c_string(status_ok(serde_json::json!({}))),
+        Err(e) => json_to_c_string(status_err(&e)),
+    }
+}
+
+/// Opens a URL with the default handler (spec §15). Requires `shell`.
+///
+/// # Safety
+///
+/// The pointer must be null or a valid NUL-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_shell_open_url(url: *const c_char) -> *mut c_char {
+    let value = if url.is_null() {
+        String::new()
+    } else {
+        unsafe { CStr::from_ptr(url) }.to_string_lossy().into_owned()
+    };
+    match shell::open_url(&value) {
+        Ok(()) => json_to_c_string(status_ok(serde_json::json!({}))),
+        Err(e) => json_to_c_string(status_err(&e)),
+    }
+}
+
+/// Opens a file or folder with the default handler (spec §15). Requires `shell`.
+///
+/// # Safety
+///
+/// The pointer must be null or a valid NUL-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_shell_open_path(path: *const c_char) -> *mut c_char {
+    let value = if path.is_null() {
+        String::new()
+    } else {
+        unsafe { CStr::from_ptr(path) }.to_string_lossy().into_owned()
+    };
+    match shell::open_path(&value) {
+        Ok(()) => json_to_c_string(status_ok(serde_json::json!({}))),
+        Err(e) => json_to_c_string(status_err(&e)),
+    }
+}
+
+/// Reveals a file in Finder (spec §15). Requires `shell`.
+///
+/// # Safety
+///
+/// The pointer must be null or a valid NUL-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_shell_show_item_in_folder(path: *const c_char) -> *mut c_char {
+    let value = if path.is_null() {
+        String::new()
+    } else {
+        unsafe { CStr::from_ptr(path) }.to_string_lossy().into_owned()
+    };
+    match shell::show_item_in_folder(&value) {
+        Ok(()) => json_to_c_string(status_ok(serde_json::json!({}))),
+        Err(e) => json_to_c_string(status_err(&e)),
+    }
+}
+
+/// Shows a native message dialog (spec §12). Requires `dialog`.
+///
+/// # Safety
+///
+/// The pointer must be null or a valid NUL-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_dialog_message(args: *const c_char) -> *mut c_char {
+    let raw = if args.is_null() {
+        "{}".to_string()
+    } else {
+        unsafe { CStr::from_ptr(args) }.to_string_lossy().into_owned()
+    };
+    match dialog::message(&raw) {
+        Ok(result) => json_to_c_string(status_ok(result)),
+        Err(e) => json_to_c_string(status_err(&e)),
+    }
+}
+
+/// Opens the native file picker (spec §12). Requires `dialog`.
+///
+/// # Safety
+///
+/// The pointer must be null or a valid NUL-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_dialog_open_file(args: *const c_char) -> *mut c_char {
+    let raw = if args.is_null() {
+        "{}".to_string()
+    } else {
+        unsafe { CStr::from_ptr(args) }.to_string_lossy().into_owned()
+    };
+    match dialog::open_file(&raw) {
+        Ok(result) => json_to_c_string(status_ok(result)),
+        Err(e) => json_to_c_string(status_err(&e)),
+    }
+}
+
+/// Opens the native save panel (spec §12). Requires `dialog`.
+///
+/// # Safety
+///
+/// The pointer must be null or a valid NUL-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_dialog_save_file(args: *const c_char) -> *mut c_char {
+    let raw = if args.is_null() {
+        "{}".to_string()
+    } else {
+        unsafe { CStr::from_ptr(args) }.to_string_lossy().into_owned()
+    };
+    match dialog::save_file(&raw) {
+        Ok(result) => json_to_c_string(status_ok(result)),
+        Err(e) => json_to_c_string(status_err(&e)),
+    }
+}
+
+/// Emits an app lifecycle event into the runtime event bus (spec §11).
+///
+/// The platform shell (Swift `AppDelegate`) calls this for the lifecycle
+/// transitions AppKit reports: `activate`, `ready`, `quit`.
+///
+/// # Safety
+///
+/// The pointer must be null or a valid NUL-terminated C string.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_emit_app_event(name: *const c_char) -> *mut c_char {
+    let value = if name.is_null() {
+        String::new()
+    } else {
+        unsafe { CStr::from_ptr(name) }.to_string_lossy().into_owned()
+    };
+    let event = match value.as_str() {
+        "activate" => EventName::AppActivate,
+        "ready" => EventName::AppReady,
+        "beforeQuit" => EventName::AppBeforeQuit,
+        "quit" => EventName::AppQuit,
+        other => {
+            let e = KitronError::code(
+                "APP_EVENT_UNKNOWN",
+                format!("unknown app lifecycle event: {other}"),
+            );
+            return json_to_c_string(status_err(&e));
+        }
+    };
+    core().emit(event, serde_json::json!({}));
+    json_to_c_string(status_ok(serde_json::json!({})))
 }

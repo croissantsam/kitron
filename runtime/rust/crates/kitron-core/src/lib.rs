@@ -76,6 +76,29 @@ impl Core {
         self.events.push(name, payload);
     }
 
+    /// Permission gate for the sensitive native APIs (spec §23).
+    ///
+    /// Permissions are declared explicitly in `kitron.config.ts`; an app never
+    /// gets the whole native surface implicitly. The check lives in the native
+    /// layer so it cannot be bypassed from JavaScript.
+    pub fn require_permission(&self, permission: &str) -> Result<(), KitronError> {
+        if self
+            .config
+            .permissions
+            .iter()
+            .any(|granted| granted == permission)
+        {
+            return Ok(());
+        }
+        Err(KitronError::code(
+            "PERMISSION_DENIED",
+            format!(
+                "the \"{permission}\" permission is not granted — add it to `permissions` in kitron.config.ts"
+            ),
+        )
+        .with_details(serde_json::json!({ "permission": permission })))
+    }
+
     /// App-lifecycle helper (spec §11): mark termination as requested.
     pub fn request_termination(&self) {
         self.termination_requested

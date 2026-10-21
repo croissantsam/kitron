@@ -1,26 +1,45 @@
 /**
- * Kitron clipboard API (phase 2).
+ * `@kitron/clipboard` — system clipboard (spec §13).
  *
- * Part of the Kitron SDK package layout (spec §24). The namespace is reserved
- * by the runtime but its native implementation lands after the MVP gate
- * (spec §41) — calling it throws a typed `KITRON_PHASE2` error so apps can
- * feature-detect instead of branching on versions.
+ * macOS uses `NSPasteboard` through the native runtime; the call is gated by
+ * the `clipboard` permission declared in `kitron.config.ts` (spec §23).
  */
 
-import { KitronError } from "@kitron/core";
+import {
+  KitronError,
+  getNativeModule,
+  parseEnvelope,
+  throwIfFailed,
+} from "@kitron/core";
 
-function phase2(feature: string): never {
-  throw new KitronError({
-    code: "KITRON_PHASE2",
-    message:
-      `${feature} ships after the MVP gate (spec §41). ` +
-      "Track progress on the Kitron roadmap; feature-detect with try/catch.",
-  });
+function requireNative() {
+  const native = getNativeModule();
+  if (!native) {
+    throw new KitronError({
+      code: "KITRON_UNAVAILABLE",
+      message: "clipboard APIs require the Kitron native runtime",
+    });
+  }
+  return native;
 }
 
 export const clipboard = {
-  /** Reads the system clipboard text. */
-  read: (): string => phase2("clipboard.read"),
-  /** Writes text to the system clipboard. */
-  write: (_text: string): void => phase2("clipboard.write"),
+  /** Reads the clipboard as text (empty string when it holds no text). */
+  async read(): Promise<string> {
+    const result = parseEnvelope(await requireNative().clipboardRead()) as {
+      text?: string;
+    };
+    return result?.text ?? "";
+  },
+
+  /** Writes text to the clipboard, replacing its current content. */
+  async write(text: string): Promise<void> {
+    if (typeof text !== "string") {
+      throw new KitronError({
+        code: "KITRON_ARGS_INVALID",
+        message: "clipboard.write requires a string",
+      });
+    }
+    throwIfFailed(await requireNative().clipboardWrite(text));
+  },
 };

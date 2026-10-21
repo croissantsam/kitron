@@ -52,6 +52,17 @@ final class KitronAppDelegate: NSObject, NSApplicationDelegate {
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
     return KitronRuntimeHost.canTerminate() ? .terminateNow : .terminateCancel
   }
+
+  /// The app became active — forwarded to the runtime event bus so
+  /// `app.on("activate", …)` fires (spec §11).
+  func applicationDidBecomeActive(_ notification: Notification) {
+    KitronEmitAppEvent("activate")
+  }
+
+  /// The app is about to terminate — `app.on("quit", …)` fires (spec §11).
+  func applicationWillTerminate(_ notification: Notification) {
+    KitronEmitAppEvent("quit")
+  }
 }
 
 // MARK: - React Native Delegate

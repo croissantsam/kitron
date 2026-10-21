@@ -11,7 +11,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { Button, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { app, backend, KitronError, logger, window } from "kitron";
+import { app, backend, clipboard, KitronError, logger, shell, window } from "kitron";
 
 interface ProgressEvent {
   step: number;
@@ -89,6 +89,26 @@ export default function HelloKitronExample() {
     await backend.invoke("report.run", { steps: 3 });
   }, []);
 
+  // Phase-2 native APIs (§42) — clipboard + shell, gated by the permissions
+  // declared in kitron.config.ts (§23).
+  const copyGreeting = useCallback(async () => {
+    try {
+      await clipboard.write("Hello from Kitron");
+      append(`clipboard → ${await clipboard.read()}`);
+    } catch (error) {
+      append(`clipboard failed → ${KitronError.from(error).message}`);
+    }
+  }, [append]);
+
+  const openReadme = useCallback(async () => {
+    try {
+      await shell.openUrl("https://github.com/croissantlabs/kitron");
+      append("shell.openUrl → handed to the system handler");
+    } catch (error) {
+      append(`shell.openUrl failed → ${KitronError.from(error).message}`);
+    }
+  }, [append]);
+
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
       <Text style={styles.title}>Kitron</Text>
@@ -113,6 +133,12 @@ export default function HelloKitronExample() {
         <Button title="Open a window" onPress={() => void openWindow()} />
         <View style={styles.spacer} />
         <Button title="Run report" onPress={() => void runReport()} />
+      </View>
+
+      <View style={styles.row}>
+        <Button title="Copy greeting" onPress={() => void copyGreeting()} />
+        <View style={styles.spacer} />
+        <Button title="Open the docs" onPress={() => void openReadme()} />
       </View>
 
       {progress ? (

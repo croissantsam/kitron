@@ -43,6 +43,15 @@ export interface KitronNativeModule {
   nodeStart(): Promise<string>;
   nodeStop(): Promise<string>;
   nodeInvoke(method: string, payloadJSON: string, timeoutMs: number): Promise<string>;
+  // Phase-2 native APIs (spec §42) — gated by explicit permissions (§23).
+  clipboardRead(): Promise<string>;
+  clipboardWrite(text: string): Promise<string>;
+  shellOpenUrl(url: string): Promise<string>;
+  shellOpenPath(path: string): Promise<string>;
+  shellShowItemInFolder(path: string): Promise<string>;
+  dialogMessage(argsJSON: string): Promise<string>;
+  dialogOpenFile(argsJSON: string): Promise<string>;
+  dialogSaveFile(argsJSON: string): Promise<string>;
 }
 
 type TurboModuleProxy = {

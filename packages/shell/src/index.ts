@@ -1,28 +1,58 @@
 /**
- * Kitron OS shell integration (phase 2).
+ * `@kitron/shell` — OS shell integration (spec §15).
  *
- * Part of the Kitron SDK package layout (spec §24). The namespace is reserved
- * by the runtime but its native implementation lands after the MVP gate
- * (spec §41) — calling it throws a typed `KITRON_PHASE2` error so apps can
- * feature-detect instead of branching on versions.
+ * macOS uses `NSWorkspace` through the native runtime; the calls are gated by
+ * the `shell` permission declared in `kitron.config.ts` (spec §23).
  */
 
-import { KitronError } from "@kitron/core";
+import {
+  KitronError,
+  getNativeModule,
+  throwIfFailed,
+} from "@kitron/core";
 
-function phase2(feature: string): never {
-  throw new KitronError({
-    code: "KITRON_PHASE2",
-    message:
-      `${feature} ships after the MVP gate (spec §41). ` +
-      "Track progress on the Kitron roadmap; feature-detect with try/catch.",
-  });
+function requireNative() {
+  const native = getNativeModule();
+  if (!native) {
+    throw new KitronError({
+      code: "KITRON_UNAVAILABLE",
+      message: "shell APIs require the Kitron native runtime",
+    });
+  }
+  return native;
 }
 
 export const shell = {
-  /** Opens a URL with the default handler (NSWorkspace). */
-  openUrl: (_url: string): void => phase2("shell.openUrl"),
+  /** Opens a URL with the default handler (browser, mail client, …). */
+  async openUrl(url: string): Promise<void> {
+    if (typeof url !== "string" || url.length === 0) {
+      throw new KitronError({
+        code: "KITRON_ARGS_INVALID",
+        message: "shell.openUrl requires a URL",
+      });
+    }
+    throwIfFailed(await requireNative().shellOpenUrl(url));
+  },
+
   /** Opens a file or folder with the default handler. */
-  openPath: (_path: string): void => phase2("shell.openPath"),
+  async openPath(path: string): Promise<void> {
+    if (typeof path !== "string" || path.length === 0) {
+      throw new KitronError({
+        code: "KITRON_ARGS_INVALID",
+        message: "shell.openPath requires a path",
+      });
+    }
+    throwIfFailed(await requireNative().shellOpenPath(path));
+  },
+
   /** Reveals a file in Finder. */
-  showItemInFolder: (_path: string): void => phase2("shell.showItemInFolder"),
+  async showItemInFolder(path: string): Promise<void> {
+    if (typeof path !== "string" || path.length === 0) {
+      throw new KitronError({
+        code: "KITRON_ARGS_INVALID",
+        message: "shell.showItemInFolder requires a path",
+      });
+    }
+    throwIfFailed(await requireNative().shellShowItemInFolder(path));
+  },
 };
