@@ -73,6 +73,11 @@ export function syncPod(appRoot: string): void {
   if (fs.existsSync(podspec)) {
     fs.copyFileSync(podspec, path.join(podDir, "Kitron.podspec"));
   }
+  // The podspec declares its license file — CocoaPods warns without it.
+  const license = path.join(RUST_WORKSPACE, "..", "macos", "pod", "LICENSE");
+  if (fs.existsSync(license)) {
+    fs.copyFileSync(license, path.join(podDir, "LICENSE"));
+  }
 
   // Ensure the Podfile references the Kitron pod (post-generate patch).
   const podfileIntent = "pod 'Kitron'";
@@ -227,7 +232,9 @@ export async function startMetro(
     () => null,
   );
   if (probe && probe.ok) {
-    log.info("Metro already running on the port");
+    log.warn(
+      `Metro already running on :${port} — if it serves another project, restart it or use --port <other>`,
+    );
     return null;
   }
   log.info(`starting Metro on :${port}…`);

@@ -96,6 +96,11 @@ export function syncKitronPod(appRoot: string): void {
     path.join(POD_TEMPLATE_ROOT, "Kitron.podspec"),
     path.join(podDir, "Kitron.podspec"),
   );
+  // The podspec declares its license file — CocoaPods warns without it.
+  const license = path.join(POD_TEMPLATE_ROOT, "LICENSE");
+  if (fs.existsSync(license)) {
+    fs.copyFileSync(license, path.join(podDir, "LICENSE"));
+  }
 }
 
 /** Adds `pod 'Kitron', :path => 'Kitron'` to the app's macOS Podfile. */

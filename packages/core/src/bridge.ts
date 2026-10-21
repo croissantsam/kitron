@@ -58,7 +58,7 @@ let cachedModule: KitronNativeModule | null | undefined;
  * Kitron native layer (plain Node process); callers throw `KITRON_UNAVAILABLE`.
  */
 export function getNativeModule(): KitronNativeModule | null {
-  if (cachedModule !== undefined) {
+  if (cachedModule) {
     return cachedModule;
   }
 
@@ -97,7 +97,8 @@ export function getNativeModule(): KitronNativeModule | null {
     return cachedModule;
   }
 
-  cachedModule = null;
+  // A miss is not cached: the module may still be installed when the runtime
+  // finishes booting, so the next call retries the lookup.
   return null;
 }
 

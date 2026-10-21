@@ -10,6 +10,7 @@ use kitron_protocol::KitronError;
 /// - `KITRON_NODE_PATH`: node binary (absolute path)
 /// - `KITRON_RUNTIME_NODE_DIR`: directory containing Kitron's `host.mjs`
 /// - app root: `Core::root_dir`
+///
 /// The backend entry from the app config is resolved against the app root.
 pub fn spawn_options_from_env(core: &Core, entry_rel: &str) -> SpawnOptions {
     let node_path = node_binary_path();

@@ -120,9 +120,8 @@ impl Core {
 
         let opts = node::spawn_options_from_env(self, &entry);
         let supervisor =
-            kitron_node_supervisor::NodeSupervisor::spawn(&opts).map_err(|e| {
+            kitron_node_supervisor::NodeSupervisor::spawn(&opts).inspect_err(|e| {
                 self.logger.error("node", &format!("spawn failed: {}", e.message));
-                e
             })?;
         let supervisor = Arc::new(supervisor);
         *self.node.lock().unwrap() = Some(supervisor.clone());

@@ -293,7 +293,7 @@ impl NodeSupervisor {
         method: &str,
         payload: Option<serde_json::Value>,
     ) -> Result<InvokeReply, KitronError> {
-        let phase = self.shared.phase.lock().unwrap().clone();
+        let phase = *self.shared.phase.lock().unwrap();
         if phase != NodePhase::Ready {
             return Err(KitronError::code(
                 "NODE_NOT_READY",

@@ -23,7 +23,7 @@ use kitron_core::{Core, EventName};
 use kitron_protocol::KitronError;
 use objc2_app_kit::{NSApplication, NSApplicationActivationPolicy};
 
-use crate::window::{apply_op, cached_snapshots, create_window, purge_closing_windows, refresh_snapshot_cache, snapshots, window_snapshot};
+use crate::window::{apply_op, create_window, purge_closing_windows, refresh_snapshot_cache, snapshots, window_snapshot};
 // ---------------------------------------------------------------------------
 // Runtime singletons
 // ---------------------------------------------------------------------------
@@ -185,6 +185,11 @@ pub(crate) unsafe fn c_string_to_json(pointer: *const c_char) -> Option<serde_js
     serde_json::from_str(&raw).ok()
 }
 
+/// Releases a string returned by this crate's C ABI.
+///
+/// # Safety
+///
+/// The pointer must be null or a string previously returned by this crate.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kitron_free_string(pointer: *mut c_char) {
     if pointer.is_null() {
@@ -195,6 +200,10 @@ pub unsafe extern "C" fn kitron_free_string(pointer: *mut c_char) {
 
 /// Bootstrap the runtime. Main thread only.
 #[unsafe(no_mangle)]
+///
+/// # Safety
+///
+/// Must be called on the main thread (AppKit is MainThreadOnly).
 pub unsafe extern "C" fn kitron_bootstrap() -> *mut c_char {
     match bootstrap() {
         Ok(()) => json_to_c_string(status_ok(serde_json::json!({}))),
@@ -204,6 +213,10 @@ pub unsafe extern "C" fn kitron_bootstrap() -> *mut c_char {
 
 /// App-information snapshot for the JSI host object (envelope: `{ok, result}`).
 #[unsafe(no_mangle)]
+///
+/// # Safety
+///
+/// Safe to call from any thread.
 pub unsafe extern "C" fn kitron_app_bits_json() -> *mut c_char {
     let core = core();
     json_to_c_string(status_ok(serde_json::json!({
@@ -221,6 +234,10 @@ pub unsafe extern "C" fn kitron_app_bits_json() -> *mut c_char {
 /// Result: `{"id": N, "windowPtr": P}` where `windowPtr` is a borrowed
 /// `NSWindow*` handed to the RN factory (Kitron owns the window).
 #[unsafe(no_mangle)]
+///
+/// # Safety
+///
+/// String arguments must be null or valid NUL-terminated C strings. Must be called on the main thread (AppKit is MainThreadOnly).
 pub unsafe extern "C" fn kitron_window_create(args: *const c_char) -> *mut c_char {
     let parsed = parse_args(args);
     match create_window(&parsed) {
@@ -232,6 +249,10 @@ pub unsafe extern "C" fn kitron_window_create(args: *const c_char) -> *mut c_cha
 /// Window op. `op` ∈ close|minimize|maximize|restore|focus|setSize|
 /// setPosition|show|hide|setTitle|setPreventClose.
 #[unsafe(no_mangle)]
+///
+/// # Safety
+///
+/// String arguments must be null or valid NUL-terminated C strings. Must be called on the main thread (AppKit is MainThreadOnly).
 pub unsafe extern "C" fn kitron_window_op(
     id: u64,
     op: *const c_char,
@@ -251,6 +272,10 @@ pub unsafe extern "C" fn kitron_window_op(
 
 /// Snapshot of a single window (or error envelope).
 #[unsafe(no_mangle)]
+///
+/// # Safety
+///
+/// Must be called on the main thread (AppKit is MainThreadOnly).
 pub unsafe extern "C" fn kitron_window_get(id: u64) -> *mut c_char {
     match window_snapshot(id) {
         Ok(snap) => json_to_c_string(status_ok(serde_json::to_value(snap).unwrap_or_default())),
@@ -260,6 +285,10 @@ pub unsafe extern "C" fn kitron_window_get(id: u64) -> *mut c_char {
 
 /// List of live windows.
 #[unsafe(no_mangle)]
+///
+/// # Safety
+///
+/// Must be called on the main thread (AppKit is MainThreadOnly).
 pub unsafe extern "C" fn kitron_window_list() -> *mut c_char {
     json_to_c_string(status_ok(
         serde_json::to_value(snapshots()).unwrap_or_default(),
@@ -268,6 +297,10 @@ pub unsafe extern "C" fn kitron_window_list() -> *mut c_char {
 
 /// App visibility. `mode` ∈ hide|show.
 #[unsafe(no_mangle)]
+///
+/// # Safety
+///
+/// String arguments must be null or valid NUL-terminated C strings. Must be called on the main thread (AppKit is MainThreadOnly).
 pub unsafe extern "C" fn kitron_app_visibility(mode: *const c_char) -> *mut c_char {
     let mode = unsafe { CStr::from_ptr(mode) }.to_string_lossy().into_owned();
     let result = match mode.as_str() {
@@ -287,6 +320,10 @@ pub unsafe extern "C" fn kitron_app_visibility(mode: *const c_char) -> *mut c_ch
 /// Requests app termination (`NSApplication.terminate`); JS receives
 /// `app.beforeQuit` via the event pump (spec §11).
 #[unsafe(no_mangle)]
+///
+/// # Safety
+///
+/// Must be called on the main thread (AppKit is MainThreadOnly).
 pub unsafe extern "C" fn kitron_app_request_quit() -> *mut c_char {
     core().emit(EventName::AppBeforeQuit, serde_json::json!({}));
     if let Some(mtm) = objc2::MainThreadMarker::new() {
@@ -299,12 +336,20 @@ pub unsafe extern "C" fn kitron_app_request_quit() -> *mut c_char {
 
 /// Whether pending termination may continue (JS veto support grows in phase 3).
 #[unsafe(no_mangle)]
+///
+/// # Safety
+///
+/// Safe to call from any thread.
 pub unsafe extern "C" fn kitron_app_can_terminate() -> i32 {
     i32::from(app_can_terminate())
 }
 
 /// JS veto of a pending termination.
 #[unsafe(no_mangle)]
+///
+/// # Safety
+///
+/// Safe to call from any thread.
 pub unsafe extern "C" fn kitron_app_cancel_termination() -> *mut c_char {
     TERMINATION_CANCELLED.store(true, Ordering::SeqCst);
     json_to_c_string(status_ok(serde_json::json!({})))
@@ -312,6 +357,10 @@ pub unsafe extern "C" fn kitron_app_cancel_termination() -> *mut c_char {
 
 /// Node status snapshot for the JSI host object (sync).
 #[unsafe(no_mangle)]
+///
+/// # Safety
+///
+/// Safe to call from any thread.
 pub unsafe extern "C" fn kitron_node_status_json() -> *mut c_char {
     let status = kitron_core::node::node_status(core());
     json_to_c_string(status_ok(
@@ -323,6 +372,10 @@ pub unsafe extern "C" fn kitron_node_status_json() -> *mut c_char {
 
 /// Node lifecycle. `mode` ∈ start|stop.
 #[unsafe(no_mangle)]
+///
+/// # Safety
+///
+/// String arguments must be null or valid NUL-terminated C strings.
 pub unsafe extern "C" fn kitron_node(mode: *const c_char) -> *mut c_char {
     let mode = unsafe { CStr::from_ptr(mode) }.to_string_lossy().into_owned();
     let core = core();
@@ -352,6 +405,10 @@ pub unsafe extern "C" fn kitron_node(mode: *const c_char) -> *mut c_char {
 /// Blocking invoke into the Node backend. Called from bridge worker threads
 /// only (never the JS thread).
 #[unsafe(no_mangle)]
+///
+/// # Safety
+///
+/// String arguments must be null or valid NUL-terminated C strings. Must not be called on the UI thread (it blocks on the backend reply).
 pub unsafe extern "C" fn kitron_node_invoke_wait(
     method: *const c_char,
     payload: *const c_char,
@@ -382,6 +439,10 @@ pub unsafe extern "C" fn kitron_node_invoke_wait(
 /// NSWindow is MainThreadOnly. The cache refreshes on the main thread after
 /// every window op and event drain.
 #[unsafe(no_mangle)]
+///
+/// # Safety
+///
+/// Safe to call from any thread.
 pub unsafe extern "C" fn kitron_snapshot_json() -> *mut c_char {
     let bits_pointer = unsafe { kitron_app_bits_json() };
     let app = unsafe { c_string_to_json(bits_pointer) }
@@ -398,6 +459,10 @@ pub unsafe extern "C" fn kitron_snapshot_json() -> *mut c_char {
 
 /// Drains the event bus for the bridge pump. Result: `{"ok":true,"result":[...events]}`.
 #[unsafe(no_mangle)]
+///
+/// # Safety
+///
+/// Must be called on the main thread (AppKit is MainThreadOnly).
 pub unsafe extern "C" fn kitron_events_drain() -> *mut c_char {
     // Main thread only (the pump runs on the main queue): safe to refresh.
     purge_closing_windows();
