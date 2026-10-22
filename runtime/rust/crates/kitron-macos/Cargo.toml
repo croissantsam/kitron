@@ -15,6 +15,9 @@ serde_json.workspace = true
 [dependencies.objc2]
 workspace = true
 
+[dependencies.block2]
+workspace = true
+
 [dependencies.objc2-app-kit]
 workspace = true
 

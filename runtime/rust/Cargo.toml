@@ -13,6 +13,9 @@ repository = "https://github.com/croissantlabs/kitron"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+# Objective-C blocks (completion handlers: sheets, timers).
+block2 = { version = "0.6", default-features = false }
+
 # AppKit / macOS (official objc2 crates)
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = [
@@ -35,6 +38,7 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
   "NSGraphics",
   "NSRunningApplication",
   "NSWorkspace",
+  "block2",
   "objc2-uniform-type-identifiers",
 ] }
 objc2-foundation = { version = "0.3", default-features = false, features = [
@@ -42,7 +46,9 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
   "NSArray",
   "NSEnumerator",
   "NSString",
+  "NSDate",
   "NSNotification",
+  "NSRunLoop",
   "NSObject",
   "NSURL",
   "objc2-core-foundation",

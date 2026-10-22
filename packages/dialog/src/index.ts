@@ -3,8 +3,9 @@
  *
  * macOS uses `NSAlert` / `NSOpenPanel` / `NSSavePanel` through the native
  * runtime; the calls are gated by the `dialog` permission declared in
- * `kitron.config.ts` (spec §23). The panels are modal: the promise settles
- * once the user dismisses them.
+ * `kitron.config.ts` (spec §23). The promise settles once the user dismisses
+ * the panel. Without a `windowId` the panel is app-modal; with one it is
+ * presented as a sheet attached to that window.
  */
 
 import {
@@ -33,6 +34,12 @@ export interface MessageOptions {
   /** Button labels, in order. Defaults to a single "OK". */
   buttons?: string[];
   style?: DialogStyle;
+  /**
+   * Present the alert as a **sheet** attached to this window (sliding from
+   * its title bar) instead of an app-modal box. An unknown id resolves to
+   * `WINDOW_NOT_FOUND`.
+   */
+  windowId?: number;
 }
 
 export interface MessageResult {
@@ -52,6 +59,8 @@ export interface OpenFileOptions {
   directory?: string;
   /** Allowed file extensions, without the dot (e.g. `["md", "txt"]`). */
   extensions?: string[];
+  /** Present the picker as a sheet attached to this window. */
+  windowId?: number;
 }
 
 export interface OpenFileResult {
@@ -66,6 +75,8 @@ export interface SaveFileOptions {
   defaultName?: string;
   /** Directory the panel starts in. */
   directory?: string;
+  /** Present the panel as a sheet attached to this window. */
+  windowId?: number;
 }
 
 export interface SaveFileResult {

@@ -1,21 +1,32 @@
 //! Native dialogs — `NSAlert`, `NSOpenPanel`, `NSSavePanel` (spec §12, phase 2).
 //!
-//! Main-thread only (AppKit). The panels are modal: the call returns once the
-//! user dismisses them. Gated by the `dialog` permission (spec §23).
+//! Main-thread only (AppKit). Gated by the `dialog` permission (spec §23).
+//!
+//! Presentation: app-modal by default, or **attached to a window as a sheet**
+//! when the call passes `windowId`. Sheets run a bounded local event pump
+//! (NSModalPanelRunLoopMode) so the synchronous call can return the same
+//! response `runModal()` would have answered with — the JS promise semantics
+//! are unchanged, only the visual presentation differs.
 
+use std::sync::{Arc, atomic::{AtomicBool, AtomicIsize, Ordering}};
+
+use block2::RcBlock;
 use kitron_protocol::KitronError;
-use objc2::rc::Retained;
+use objc2::rc::{Retained};
 use objc2_app_kit::{
-    NSAlert, NSAlertStyle, NSModalResponse, NSModalResponseCancel, NSOpenPanel, NSSavePanel,
+    NSAlert, NSAlertStyle, NSApplication, NSModalPanelRunLoopMode, NSModalResponse,
+    NSModalResponseCancel, NSOpenPanel, NSSavePanel, NSWindow,
 };
-use objc2_foundation::{NSArray, NSString, NSURL};
+use objc2_foundation::{NSArray, NSDate, NSString, NSURL};
 use objc2_uniform_type_identifiers::UTType;
 use serde::Deserialize;
 
-use crate::core;
+use crate::{core, window};
 
 /// AppKit's `NSAlertFirstButtonReturn` — the return code of the first button.
 const NS_ALERT_FIRST_BUTTON_RETURN: NSModalResponse = 1000;
+
+// ARG STRUCTS — now with `window_id`.
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase", default)]
@@ -26,6 +37,8 @@ struct MessageArgs {
     buttons: Option<Vec<String>>,
     /// "info" | "warning" | "critical"
     style: Option<String>,
+    /// Present as a sheet attached to this window instead of app-modal.
+    window_id: Option<u64>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -35,6 +48,8 @@ struct OpenFileArgs {
     multiple: Option<bool>,
     directory: Option<String>,
     extensions: Option<Vec<String>>,
+    /// Present as a sheet attached to this window instead of app-modal.
+    window_id: Option<u64>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -43,6 +58,8 @@ struct SaveFileArgs {
     title: Option<String>,
     default_name: Option<String>,
     directory: Option<String>,
+    /// Present as a sheet attached to this window instead of app-modal.
+    window_id: Option<u64>,
 }
 
 fn require_main_thread(feature: &str) -> Result<(), KitronError> {
@@ -61,6 +78,64 @@ fn alert_style(name: Option<&str>) -> NSAlertStyle {
         Some("critical") | Some("error") => NSAlertStyle::Critical,
         _ => NSAlertStyle::Informational,
     }
+}
+
+/// The window a sheet should attach to, when the call asks for one.
+///
+/// `windowId` is optional: `None` (or an unknown id handed back with a clear
+/// error) leaves the caller free to fall back to the app-modal presentation.
+fn resolve_sheet_window(window_id: Option<u64>) -> Result<Option<Retained<NSWindow>>, KitronError> {
+    let Some(id) = window_id else {
+        return Ok(None);
+    };
+    let Some((win, _, _)) = window::get_handle(id) else {
+        return Err(KitronError::code(
+            "WINDOW_NOT_FOUND",
+            format!("no window {id} to attach the dialog to"),
+        ));
+    };
+    Ok(Some(win))
+}
+
+///
+/// Presents a dialog as a **sheet** attached to `window` and blocks — pumping
+/// AppKit's modal-panel run loop — until the user dismisses it, then answers
+/// with the same modal response `runModal()` would have produced.
+///
+/// The pump must keep dispatching events (the sheet is served in
+/// NSModalPanelRunLoopMode) while the Rust call is parked; untilDate
+/// distantFuture makes the pump block on the run loop instead of spinning.
+fn run_sheet<F>(mtm: objc2::MainThreadMarker, begin: F) -> NSModalResponse
+where
+    F: FnOnce(&RcBlock<dyn Fn(NSModalResponse)>),
+{
+    let answered = Arc::new(AtomicIsize::new(0));
+    let finished = Arc::new(AtomicBool::new(false));
+
+    let response_cell = Arc::clone(&answered);
+    let done_flag = Arc::clone(&finished);
+    let block = RcBlock::<dyn Fn(NSModalResponse)>::new(move |response: NSModalResponse| {
+        response_cell.store(response, Ordering::SeqCst);
+        done_flag.store(true, Ordering::SeqCst);
+    });
+
+    begin(&block);
+
+    let app = NSApplication::sharedApplication(mtm);
+    while !finished.load(Ordering::SeqCst) {
+        let Some(event) = app.nextEventMatchingMask_untilDate_inMode_dequeue(
+            objc2_app_kit::NSEventMask::Any,
+            Some(&NSDate::distantFuture()),
+            // SAFETY: `NSModalPanelRunLoopMode` is a plain extern static — an
+            // NSString constant AppKit owns and never frees.
+            unsafe { NSModalPanelRunLoopMode },
+            true,
+        ) else {
+            continue;
+        };
+        app.sendEvent(&event);
+    }
+    answered.load(Ordering::SeqCst)
 }
 
 /// Shows a native message/alert. Returns the label of the clicked button.
@@ -86,7 +161,13 @@ pub(crate) fn message(args_json: &str) -> Result<serde_json::Value, KitronError>
         alert.addButtonWithTitle(&NSString::from_str(label));
     }
 
-    let response = alert.runModal();
+    let response = match resolve_sheet_window(args.window_id)? {
+        // Attached: the alert slides in from the window's title bar.
+        Some(win) => run_sheet(mtm, |block| {
+            alert.beginSheetModalForWindow_completionHandler(&win, Some(block));
+        }),
+        None => alert.runModal(),
+    };
     // An NSAlert answers with `NSAlertFirstButtonReturn + index` (1000+),
     // not with `NSModalResponseOK` — the "confirmed" flag is therefore
     // "the first button was clicked".
@@ -135,7 +216,12 @@ pub(crate) fn open_file(args_json: &str) -> Result<serde_json::Value, KitronErro
         }
     }
 
-    let response = panel.runModal();
+    let response = match resolve_sheet_window(args.window_id)? {
+        Some(win) => run_sheet(mtm, |block| {
+            panel.beginSheetModalForWindow_completionHandler(&win, block);
+        }),
+        None => panel.runModal(),
+    };
     if response == NSModalResponseCancel {
         return Ok(serde_json::json!({ "canceled": true, "paths": [] }));
     }
@@ -171,7 +257,12 @@ pub(crate) fn save_file(args_json: &str) -> Result<serde_json::Value, KitronErro
         panel.setDirectoryURL(Some(&url));
     }
 
-    let response = panel.runModal();
+    let response = match resolve_sheet_window(args.window_id)? {
+        Some(win) => run_sheet(mtm, |block| {
+            panel.beginSheetModalForWindow_completionHandler(&win, block);
+        }),
+        None => panel.runModal(),
+    };
     if response == NSModalResponseCancel {
         return Ok(serde_json::json!({ "canceled": true, "path": serde_json::Value::Null }));
     }

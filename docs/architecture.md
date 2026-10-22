@@ -312,7 +312,11 @@ into a `KitronError` (spec §33).
 | `menu.setApplicationMenu` | `kitron_menu_set_application_menu` | `NSMenu`                | —          |
 
 AppKit is `MainThreadOnly`, so these calls run on the module's main queue. The
-panels are modal — the promise settles once the user dismisses them.
+promise settles once the user dismisses the panel. Without a `windowId` the
+dialog is app-modal; with `windowId` it is presented as a **sheet attached to
+that window** — the call still settles synchronously (the runtime pumps
+AppKit's modal-panel run loop while the sheet is up), only the presentation
+differs. An unknown `windowId` resolves to `WINDOW_NOT_FOUND`.
 
 App lifecycle events (`app.activate`, `app.quit`) are pushed by the platform
 shell: the Swift `AppDelegate` calls `KitronEmitAppEvent("activate")`, which

@@ -86,7 +86,7 @@ pub struct WindowEntry {
 unsafe impl Send for WindowEntry {}
 unsafe impl Sync for WindowEntry {}
 
-fn get_handle(id: u64) -> Option<(Retained<NSWindow>, Arc<AtomicBool>, Arc<AtomicBool>)> {
+pub(crate) fn get_handle(id: u64) -> Option<(Retained<NSWindow>, Arc<AtomicBool>, Arc<AtomicBool>)> {
     let windows = host().windows.lock().ok()?;
     windows.get(&id).map(|entry| {
         (entry.window.clone(), entry.closing.clone(), entry.prevent_close.clone())
