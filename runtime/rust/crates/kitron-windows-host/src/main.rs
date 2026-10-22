@@ -14,8 +14,9 @@ fn build_argv() -> Vec<*const u8> {
     let mut argv: Vec<*const u8> = Vec::new();
     for arg in std::env::args() {
         // Leak-per-arg is the process lifetime; the host runs until exit.
-        let raw: *mut u8 = Box::into_raw(arg.into_bytes().into_boxed_slice());
-        argv.push(raw as *const u8);
+        let boxed = arg.into_bytes().into_boxed_slice();
+        argv.push(boxed.as_ptr());
+        std::mem::forget(boxed);
     }
     argv.push(std::ptr::null());
     argv
