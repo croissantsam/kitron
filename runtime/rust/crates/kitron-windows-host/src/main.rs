@@ -9,6 +9,18 @@
 //! On non-Windows this binary does nothing (macOS builds keep it inert, the
 //! same as every cfg-gated Windows artifact).
 
+#[cfg(windows)]
+fn build_argv() -> Vec<*const u8> {
+    let mut argv: Vec<*const u8> = Vec::new();
+    for arg in std::env::args() {
+        // Leak-per-arg is the process lifetime; the host runs until exit.
+        let raw: *mut u8 = Box::into_raw(arg.into_bytes().into_boxed_slice());
+        argv.push(raw as *const u8);
+    }
+    argv.push(std::ptr::null());
+    argv
+}
+
 fn main() {
     #[cfg(windows)]
     {
@@ -18,14 +30,7 @@ fn main() {
 
         // Serviceable argv hand-off; the host reads its wiring from
         // KITRON_CONFIG_JSON / KITRON_HOST_SMOKE so argv stays unused today.
-        let mut argv: Vec<*const u8> = std::env::args()
-            .map(|arg| std::ffi::CString::new(arg).map(|c| Box::into_raw(c.into_boxed_c_str())))
-            .collect::<Result<_, _>>()
-            .unwrap_or_default()
-            .into_iter()
-            .map(|raw: *mut u8| raw as *const u8)
-            .collect();
-        argv.push(std::ptr::null());
+        let argv = build_argv();
         let code = unsafe { kitron_host_main(argv.len() as i32 - 1, argv.as_ptr()) };
         std::process::exit(code);
     }
