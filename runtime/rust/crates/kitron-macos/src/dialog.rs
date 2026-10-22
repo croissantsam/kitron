@@ -19,48 +19,15 @@ use objc2_app_kit::{
 };
 use objc2_foundation::{NSArray, NSDate, NSString, NSURL};
 use objc2_uniform_type_identifiers::UTType;
-use serde::Deserialize;
+
+// The wire models live in the portable core — a shell only parses and fills
+// them; result builders keep the JSON keys the TypeScript SDK reads.
+use kitron_core::shell::{
+    dialog_results, DialogMessageArgs as MessageArgs, DialogOpenFileArgs as OpenFileArgs,
+    DialogSaveFileArgs as SaveFileArgs,
+};
 
 use crate::{core, window};
-
-/// AppKit's `NSAlertFirstButtonReturn` — the return code of the first button.
-const NS_ALERT_FIRST_BUTTON_RETURN: NSModalResponse = 1000;
-
-// ARG STRUCTS — now with `window_id`.
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-struct MessageArgs {
-    title: Option<String>,
-    message: Option<String>,
-    detail: Option<String>,
-    buttons: Option<Vec<String>>,
-    /// "info" | "warning" | "critical"
-    style: Option<String>,
-    /// Present as a sheet attached to this window instead of app-modal.
-    window_id: Option<u64>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-struct OpenFileArgs {
-    title: Option<String>,
-    multiple: Option<bool>,
-    directory: Option<String>,
-    extensions: Option<Vec<String>>,
-    /// Present as a sheet attached to this window instead of app-modal.
-    window_id: Option<u64>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-struct SaveFileArgs {
-    title: Option<String>,
-    default_name: Option<String>,
-    directory: Option<String>,
-    /// Present as a sheet attached to this window instead of app-modal.
-    window_id: Option<u64>,
-}
 
 fn require_main_thread(feature: &str) -> Result<(), KitronError> {
     if objc2::MainThreadMarker::new().is_none() {
@@ -168,20 +135,9 @@ pub(crate) fn message(args_json: &str) -> Result<serde_json::Value, KitronError>
         }),
         None => alert.runModal(),
     };
-    // An NSAlert answers with `NSAlertFirstButtonReturn + index` (1000+),
-    // not with `NSModalResponseOK` — the "confirmed" flag is therefore
-    // "the first button was clicked".
-    let index = response - NS_ALERT_FIRST_BUTTON_RETURN;
-    let index = if index < 0 { 0 } else { index };
-    let button = labels
-        .get(index as usize)
-        .cloned()
-        .unwrap_or_else(|| "OK".to_string());
-    Ok(serde_json::json!({
-        "button": button,
-        "index": index,
-        "confirmed": index == 0,
-    }))
+    // An NSAlert answers `NSAlertFirstButtonReturn + index` (1000+), so the
+    // "confirmed" flag is "the first button was clicked".
+    Ok(dialog_results::message(&labels, response))
 }
 
 /// Opens the native file picker. Returns the selected paths.
@@ -223,7 +179,7 @@ pub(crate) fn open_file(args_json: &str) -> Result<serde_json::Value, KitronErro
         None => panel.runModal(),
     };
     if response == NSModalResponseCancel {
-        return Ok(serde_json::json!({ "canceled": true, "paths": [] }));
+        return Ok(dialog_results::canceled_open());
     }
     let urls = panel.URLs();
     let mut paths = Vec::new();
@@ -232,7 +188,7 @@ pub(crate) fn open_file(args_json: &str) -> Result<serde_json::Value, KitronErro
             paths.push(path.to_string());
         }
     }
-    Ok(serde_json::json!({ "canceled": false, "paths": paths }))
+    Ok(dialog_results::chose_open(paths))
 }
 
 /// Opens the native save panel. Returns the chosen path.
@@ -264,10 +220,10 @@ pub(crate) fn save_file(args_json: &str) -> Result<serde_json::Value, KitronErro
         None => panel.runModal(),
     };
     if response == NSModalResponseCancel {
-        return Ok(serde_json::json!({ "canceled": true, "path": serde_json::Value::Null }));
+        return Ok(dialog_results::canceled_save());
     }
     let path = panel
         .URL()
         .and_then(|url| url.path().map(|value| value.to_string()));
-    Ok(serde_json::json!({ "canceled": false, "path": path }))
+    Ok(dialog_results::chose_save(path))
 }

@@ -343,3 +343,12 @@ On the native side each item with an `action` gets
 When AppKit dispatches the click, the target reads the tag, looks the action id
 up and pushes a `menu.action` event into the core event bus — the same bus the
 UI reads through the regular event pump.
+
+## Shell contracts (adding a platform, e.g. Windows)
+
+The wire models every shell parses and answers live in
+`kitron_core::shell`; the required C ABI, event-sink semantics, permission
+gates and the watch-outs for a Windows shell are documented in
+[`docs/shell-contracts.md`](shell-contracts.md). `tests/bridge-conformance.mjs`
+keeps the three hand-written surfaces (native module, TypeScript API, C ABI)
+entangled on every test run.

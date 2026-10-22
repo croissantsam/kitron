@@ -19,6 +19,7 @@ pub mod config_loader;
 pub mod event_bus;
 pub mod logger;
 pub mod node;
+pub mod shell;
 
 pub use event_bus::{EventName, RuntimeEvent};
 pub use logger::SharedLogger;

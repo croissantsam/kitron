@@ -21,48 +21,14 @@ use objc2_app_kit::{
 use objc2_foundation::{
     NSNotification, NSPoint, NSObject, NSObjectProtocol, NSRect, NSSize, NSString,
 };
-use serde::{Deserialize, Serialize};
 
 use crate::{core, host};
 
 // ---------------------------------------------------------------------------
-// Shapes
+// Shapes (the wire models live in the portable core — a shell only fills them)
 // ---------------------------------------------------------------------------
 
-/// Window state as exposed to JS (spec §10 `window.get`).
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WindowSnapshot {
-    pub id: u64,
-    pub title: String,
-    pub frame: WindowFrame,
-    pub focused: bool,
-    pub minimized: bool,
-    pub maximized: bool,
-    pub visible: bool,
-}
-
-/// Frame in top-left screen coordinates.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct WindowFrame {
-    pub x: f64,
-    pub y: f64,
-    pub width: f64,
-    pub height: f64,
-}
-
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct WindowCreateArgs {
-    title: Option<String>,
-    width: Option<f64>,
-    height: Option<f64>,
-    focus: Option<bool>,
-    resizable: Option<bool>,
-    minimizable: Option<bool>,
-    closable: Option<bool>,
-}
+use kitron_core::shell::{WindowCreateArgs, WindowOp, WindowSnapshot, WindowFrame};
 
 // ---------------------------------------------------------------------------
 // Registry
@@ -280,21 +246,23 @@ pub(crate) fn apply_op(id: u64, op: &str, args: &serde_json::Value) -> Result<()
 
     let app = NSApplication::sharedApplication(mtm);
 
-    match op {
-        "close" => window.performClose(None),
-        "minimize" => window.miniaturize(None),
-        "maximize" | "restore" => {
+    // The op name is a portable contract (see kitron_core::shell) — every
+    // platform shell answers the same set; unknown names surface as errors.
+    match WindowOp::from_wire(op) {
+        WindowOp::Close => window.performClose(None),
+        WindowOp::Minimize => window.miniaturize(None),
+        WindowOp::Maximize | WindowOp::Restore => {
             if window.isMiniaturized() {
                 window.deminiaturize(None);
             } else {
                 window.zoom(None);
             }
         }
-        "focus" => {
+        WindowOp::Focus => {
             app.activate();
             window.makeKeyAndOrderFront(None);
         }
-        "setSize" => {
+        WindowOp::SetSize => {
             let width = args.get("width").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let height = args.get("height").and_then(|v| v.as_f64()).unwrap_or(0.0);
             if width <= 0.0 || height <= 0.0 {
@@ -305,14 +273,14 @@ pub(crate) fn apply_op(id: u64, op: &str, args: &serde_json::Value) -> Result<()
             }
             window.setContentSize(NSSize::new(width, height));
         }
-        "setPosition" => {
+        WindowOp::SetPosition => {
             let x = args.get("x").and_then(|v| v.as_f64()).unwrap_or(0.0);
             let y = args.get("y").and_then(|v| v.as_f64()).unwrap_or(0.0);
             window.setFrameTopLeftPoint(NSPoint::new(x, y));
         }
-        "show" => window.orderFront(None),
-        "hide" => window.orderOut(None),
-        "setTitle" => {
+        WindowOp::Show => window.orderFront(None),
+        WindowOp::Hide => window.orderOut(None),
+        WindowOp::SetTitle => {
             let Some(title) = args.get("title").and_then(|v| v.as_str()) else {
                 return Err(KitronError::code(
                     "WINDOW_ARGS_INVALID",
@@ -321,17 +289,17 @@ pub(crate) fn apply_op(id: u64, op: &str, args: &serde_json::Value) -> Result<()
             };
             window.setTitle(&NSString::from_str(title));
         }
-        "setPreventClose" => {
+        WindowOp::SetPreventClose => {
             let flag = args
                 .get("preventClose")
                 .and_then(|v| v.as_bool())
                 .unwrap_or(false);
             prevent_close.store(flag, Ordering::SeqCst);
         }
-        other => {
+        WindowOp::Unknown => {
             return Err(KitronError::code(
                 "WINDOW_OP_UNKNOWN",
-                format!("unknown window op {other}"),
+                format!("unknown window op {op}"),
             ));
         }
     }

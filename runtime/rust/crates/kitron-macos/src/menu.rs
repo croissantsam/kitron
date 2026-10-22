@@ -19,7 +19,6 @@ use objc2_app_kit::{
     NSMenuItem,
 };
 use objc2_foundation::{NSInteger, NSObject, NSObjectProtocol, NSString};
-use serde::Deserialize;
 
 /// Action id per menu-item tag (the tag is the only thing the target object
 /// receives when a menu item is clicked).
@@ -82,32 +81,11 @@ fn menu_target() -> Retained<MenuTarget> {
 }
 
 // ---------------------------------------------------------------------------
-// Definition (JSON from JS)
+// Definition (JSON from JS) — the wire models live in the portable core;
+// parsing happens once here, the shapes travel untouched between shells.
 // ---------------------------------------------------------------------------
 
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-pub(crate) struct MenuDefinition {
-    pub label: String,
-    pub items: Vec<MenuItemDefinition>,
-}
-
-#[derive(Debug, Default, Deserialize)]
-#[serde(rename_all = "camelCase", default)]
-pub(crate) struct MenuItemDefinition {
-    /// "separator" for a divider.
-    #[serde(rename = "type")]
-    pub kind: Option<String>,
-    pub label: Option<String>,
-    /// Action id dispatched to JS when the item is clicked.
-    pub action: Option<String>,
-    /// Accelerator, e.g. "CmdOrCtrl+N".
-    pub accelerator: Option<String>,
-    /// Nested items → a submenu.
-    pub items: Option<Vec<MenuItemDefinition>>,
-    pub enabled: Option<bool>,
-    pub checked: Option<bool>,
-}
+pub(crate) use kitron_core::shell::{MenuDefinition, MenuItemDefinition};
 
 // ---------------------------------------------------------------------------
 // Installation
