@@ -54,7 +54,12 @@ jobs:
         run: cargo build -p kitron-windows-host
 
       - name: ABI probe (windows, ops, menus, clipboard, errors — full surface)
-        run: cargo test -p kitron-windows-host --test abi_probe
+        # --nocapture + short timeout: a hang fails the step with the trace
+        # of the last reached probe step (a cancelled run drops its logs).
+        shell: bash
+        run: |
+          set -o pipefail
+          timeout 300 cargo test -p kitron-windows-host --test abi_probe -- --nocapture 2>&1 | tee /tmp/probe.out
 
       - name: Host smoke (bootstrap → pump → shutdown, events to stdout)
         shell: bash
