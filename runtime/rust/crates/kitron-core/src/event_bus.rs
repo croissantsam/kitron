@@ -30,6 +30,32 @@ pub enum EventName {
 }
 
 impl EventName {
+    /// Parses an event name (used when flushing queued events to a sink).
+    pub fn parse(name: &str) -> Option<Self> {
+        Some(match name {
+            "app.ready" => Self::AppReady,
+            "app.activate" => Self::AppActivate,
+            "app.beforeQuit" => Self::AppBeforeQuit,
+            "app.quit" => Self::AppQuit,
+            "window.created" => Self::WindowCreated,
+            "window.closed" => Self::WindowClosed,
+            "window.focus" => Self::WindowFocus,
+            "window.blur" => Self::WindowBlur,
+            "window.resize" => Self::WindowResize,
+            "window.move" => Self::WindowMove,
+            "window.minimize" => Self::WindowMinimize,
+            "window.restore" => Self::WindowRestore,
+            "node.started" => Self::NodeStarted,
+            "node.ready" => Self::NodeReady,
+            "node.log" => Self::NodeLog,
+            "node.stopping" => Self::NodeStopping,
+            "node.exited" => Self::NodeExited,
+            "backend.event" => Self::NodeEvent,
+            "menu.action" => Self::MenuAction,
+            _ => return None,
+        })
+    }
+
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::AppReady => "app.ready",

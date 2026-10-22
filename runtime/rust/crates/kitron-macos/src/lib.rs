@@ -19,7 +19,7 @@ pub mod window;
 use std::collections::BTreeMap;
 use std::ffi::{c_char, CString, CStr};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::Duration;
 
 use kitron_core::{Core, EventName};
@@ -666,6 +666,64 @@ pub(crate) fn menu_emit_action(action: &str) {
         EventName::MenuAction,
         serde_json::json!({ "action": action }),
     );
+}
+
+/// The raw sink installed by the bridge (ObjC++ side).
+///
+/// The context is an Objective-C object pointer; it is stored as an integer so
+/// the closure stays `Send + Sync` — the bridge owns the object's lifetime.
+type RawEventSinkFn = unsafe extern "C" fn(usize, *const c_char, *const c_char);
+
+struct RawEventSink {
+    context: usize,
+    sink: RawEventSinkFn,
+}
+
+// SAFETY: the context is only ever handed back to the Objective-C++ side that
+// installed it; the Rust side never dereferences it.
+unsafe impl Send for RawEventSink {}
+unsafe impl Sync for RawEventSink {}
+
+fn raw_event_sink() -> &'static Mutex<Option<RawEventSink>> {
+    static SINK: OnceLock<Mutex<Option<RawEventSink>>> = OnceLock::new();
+    SINK.get_or_init(|| Mutex::new(None))
+}
+
+/// Installs the sink that delivers runtime events to the UI (push delivery).
+///
+/// The callback runs on whichever thread emitted the event — the bridge
+/// resolves the pending JS promise from there.
+/// Installs the sink that delivers runtime events to the UI (push delivery).
+///
+/// # Safety
+///
+/// The callback must be a valid function pointer and the context an opaque
+/// value it understands; the bridge passes its own module instance.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_set_event_sink(context: usize, sink: Option<RawEventSinkFn>) {
+    *raw_event_sink().lock().unwrap() = sink.map(|callback| RawEventSink { context, sink: callback });
+    let installed = sink.map(|_callback| {
+        Arc::new(move |name: EventName, payload: serde_json::Value| {
+            let guard = raw_event_sink().lock().unwrap();
+            let Some(raw) = guard.as_ref() else {
+                return;
+            };
+            let name = CString::new(name.as_str()).unwrap_or_default();
+            let payload = CString::new(payload.to_string()).unwrap_or_default();
+            unsafe { (raw.sink)(raw.context, name.as_ptr(), payload.as_ptr()) };
+        }) as Arc<dyn Fn(EventName, serde_json::Value) + Send + Sync>
+    });
+    core().set_event_sink(installed);
+
+    // Events emitted before the sink existed (the app boots before the UI
+    // subscribes) are still queued in the bus — flush them through the sink
+    // so nothing is lost.
+    for event in core().events().drain() {
+        let Some(name) = EventName::parse(event.name) else {
+            continue;
+        };
+        core().emit(name, event.payload);
+    }
 }
 
 /// Drains the runtime event bus (used by the crate's integration tests).

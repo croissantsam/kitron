@@ -95,6 +95,25 @@ The TypeScript bridge (`@kitron/core`) resolves the module defensively:
 nativeModuleProxy.KitronRuntime  →  __turboModuleProxy.get(…)  →  NativeModules
 ```
 
+### 2.3 Events — push, not poll
+
+Runtime events (window moved, menu clicked, app activated, backend pushed) are
+delivered **immediately**:
+
+```text
+Rust core emits ──▶ the event sink (C callback) ──▶ KitronModule
+                                                     └─ resolves the parked
+                                                        `nextEvent()` promise
+```
+
+The UI parks one promise on `nextEvent()` and re-parks after each event; the
+native side resolves it the moment something happens. Events emitted before
+the UI subscribes are queued in the core's bus and flushed through the sink
+when the module is created — nothing is lost.
+
+(The legacy `eventsDrain()` is still exposed for compatibility, but the SDK
+no longer polls it.)
+
 ---
 
 ## 3. React Native ⇄ backend (typed RPC)

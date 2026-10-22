@@ -23,6 +23,9 @@ pub mod node;
 pub use event_bus::{EventName, RuntimeEvent};
 pub use logger::SharedLogger;
 
+/// Sink that delivers runtime events to the UI (push delivery).
+pub type EventSink = Arc<dyn Fn(EventName, serde_json::Value) + Send + Sync>;
+
 /// The runtime core instance shared between the platform shell, the JSI bridge
 /// and the Node supervisor.
 pub struct Core {
@@ -34,6 +37,9 @@ pub struct Core {
     pub dev_mode: bool,
     pub logger: Arc<SharedLogger>,
     events: Arc<event_bus::EventBus>,
+    /// Optional push sink: when installed, events are delivered to the UI
+    /// immediately instead of waiting in the bus for a drain.
+    event_sink: Mutex<Option<EventSink>>,
     node: Mutex<Option<Arc<kitron_node_supervisor::NodeSupervisor>>>,
     /// Set by the platform shell when termination has been requested
     /// (`applicationShouldTerminate`).
@@ -58,6 +64,7 @@ impl Core {
             root_dir,
             dev_mode,
             events: Arc::new(event_bus::EventBus::new()),
+            event_sink: Mutex::new(None),
             node: Mutex::new(None),
             termination_requested: AtomicBool::new(false),
             termination_cancelled: AtomicBool::new(false),
@@ -73,7 +80,33 @@ impl Core {
     }
 
     pub fn emit(&self, name: EventName, payload: serde_json::Value) {
+        // A sink (installed by the platform shell) delivers the event to the UI
+        // immediately — no polling. Without one, the event waits in the bus
+        // and the UI drains it.
+        if let Some(sink) = self.event_sink.lock().unwrap().clone() {
+            sink(name, payload);
+            return;
+        }
         self.events.push(name, payload);
+    }
+
+    /// Installs the sink that delivers events to the UI (push delivery).
+    pub fn set_event_sink(&self, sink: Option<EventSink>) {
+        *self.event_sink.lock().unwrap() = sink;
+    }
+
+    /// Emits an event that belongs to a window.
+    pub fn emit_windowed(
+        &self,
+        name: EventName,
+        window_id: Option<u64>,
+        payload: serde_json::Value,
+    ) {
+        if let Some(sink) = self.event_sink.lock().unwrap().clone() {
+            sink(name, payload);
+            return;
+        }
+        self.events.push_windowed(name, window_id, payload);
     }
 
     /// Permission gate for the sensitive native APIs (spec §23).

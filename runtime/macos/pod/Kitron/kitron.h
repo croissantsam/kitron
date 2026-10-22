@@ -70,6 +70,16 @@ char *kitron_snapshot_json(void);
 /// Main thread only (refreshes window snapshots touching AppKit).
 char *kitron_events_drain(void);
 
+/// Push delivery: the core calls `sink` for every runtime event instead of
+/// queueing it for a drain. `context` is an opaque pointer handed back to the
+/// callback (the bridge passes its module instance).
+typedef void (*KitronEventSink)(uintptr_t context,
+                                const char *name,
+                                const char *payload_json);
+
+/// Installs (or clears, with `sink == NULL`) the event sink.
+void kitron_set_event_sink(uintptr_t context, KitronEventSink sink);
+
 /// Emits an app lifecycle event ("activate" | "ready" | "beforeQuit" | "quit")
 /// into the runtime event bus. Called by the platform shell.
 char *kitron_emit_app_event(const char *name);

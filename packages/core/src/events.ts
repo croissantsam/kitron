@@ -1,15 +1,16 @@
 /**
  * Runtime event plumbing (spec §32 bridge, §11/§20 subscriptions).
  *
- * Native pushes events into the core event bus; the bridge exposes
- * `eventsDrain()`. The JS layer polls the drain and fans out to subscribers
- * — 10 Hz is ample for window & backend lifecycle in the MVP (spec §41;
- * push-based delivery is the phase-2 upgrade once the native EventEmitter
- * pathway is wired).
+ * The native runtime **pushes** events: the UI parks a promise on
+ * `nextEvent()` and the runtime resolves it the moment an event happens (a
+ * window moved, a menu item was clicked, the backend pushed an event). There
+ * is no polling — an event reaches the app in the same tick it happened.
+ *
+ * Outside a Kitron runtime (plain Node, tests) there is no native module, so
+ * the pump simply stays idle and local dispatch still works.
  */
 
 import { getNativeModule } from "./bridge.js";
-import type { KitronErrorShape } from "./error.js";
 
 export type KitronEventName =
   | "app.ready"
@@ -41,12 +42,10 @@ export type KitronEvent = {
 
 type Listener<T = unknown> = (event: T) => void;
 
-const DRAIN_INTERVAL_MS = 100;
-
 export class KitronEventEmitter {
   private listeners = new Map<string, Set<Listener<never>>>();
-  private pump: ReturnType<typeof setInterval> | null = null;
-  private drainInFlight = false;
+  private pumpRunning = false;
+  private stopped = false;
 
   on<T>(name: string, listener: Listener<T>): () => void {
     let set = this.listeners.get(name);
@@ -88,55 +87,51 @@ export class KitronEventEmitter {
     }
   }
 
-  /** Starts the drain interval when the first listener arrives. */
+  /** Starts the push loop when the first listener arrives. */
   private ensurePump(): void {
-    if (this.pump !== null) {
+    if (this.pumpRunning || this.stopped) {
       return;
     }
-    const startPump = () => {
-      this.pump = setInterval(() => void this.drain(), DRAIN_INTERVAL_MS);
-      void this.drain();
-    };
-    // Pump starts whenever a native module materializes; if there is no native
-    // runtime (plain Node/test host), listeners for local events still work.
-    startPump();
+    this.pumpRunning = true;
+    void this.pump();
   }
 
-  private async drain(): Promise<void> {
-    if (this.drainInFlight) {
-      return;
-    }
+  /**
+   * The push loop: park a promise on the native side and dispatch whatever
+   * comes back, then park the next one.
+   */
+  private async pump(): Promise<void> {
     const native = getNativeModule();
     if (!native) {
+      // No native runtime (plain Node) — local dispatch still works.
+      this.pumpRunning = false;
       return;
     }
-    this.drainInFlight = true;
-    try {
-      const raw = await native.eventsDrain();
-      const envelope = JSON.parse(raw) as {
-        ok: boolean;
-        result?: KitronEvent[];
-        error?: KitronErrorShape;
-      };
-      if (!envelope.ok || !envelope.result) {
-        return;
+    while (!this.stopped) {
+      try {
+        const raw = await native.nextEvent();
+        if (!raw) {
+          break;
+        }
+        const event = JSON.parse(raw) as { name?: string; payload?: unknown };
+        if (typeof event.name === "string") {
+          this.emitLocal(event.name, {
+            name: event.name as KitronEventName,
+            payload: event.payload,
+          });
+        }
+      } catch {
+        // A failed delivery must never kill the loop — the native side may be
+        // tearing down (app quit).
+        break;
       }
-      for (const event of envelope.result) {
-        this.emitLocal(event.name, event);
-      }
-    } catch {
-      // Drains are best effort: transient bridge failures just retry next tick.
-    } finally {
-      this.drainInFlight = false;
     }
+    this.pumpRunning = false;
   }
 
   /** Test/teardown hook. */
   stop(): void {
-    if (this.pump !== null) {
-      clearInterval(this.pump);
-      this.pump = null;
-    }
+    this.stopped = true;
   }
 }
 

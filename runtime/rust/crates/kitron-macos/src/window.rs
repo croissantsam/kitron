@@ -158,7 +158,7 @@ define_class!(
 );
 
 fn emit_window_event(name: EventName, id: u64) {
-    core().events().push_windowed(name, Some(id), serde_json::json!({ "id": id }));
+    core().emit_windowed(name, Some(id), serde_json::json!({ "id": id }));
 }
 
 fn new_delegate(mtm: MainThreadMarker, window_id: u64) -> Retained<WindowDelegate> {
@@ -242,7 +242,7 @@ pub(crate) fn create_window(args: &serde_json::Value) -> Result<serde_json::Valu
         window.orderFront(None);
     }
 
-    core().events().push_windowed(
+    core().emit_windowed(
         EventName::WindowCreated,
         Some(id),
         serde_json::json!({ "id": id, "title": title, "width": width, "height": height }),
@@ -250,7 +250,7 @@ pub(crate) fn create_window(args: &serde_json::Value) -> Result<serde_json::Valu
     // The app signals ready when the main window exists (spec §11): the JS
     // `app.onReady()` promise and `app.ready` listeners resolve off the pump.
     if id == 1 {
-        core().events().push(EventName::AppReady, serde_json::json!({}));
+        core().emit(EventName::AppReady, serde_json::json!({}));
     }
     refresh_snapshot_cache();
 

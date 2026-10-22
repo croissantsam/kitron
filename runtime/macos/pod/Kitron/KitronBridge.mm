@@ -171,13 +171,27 @@ facebook::jsi::Value MakeSnapshotFunction(facebook::jsi::Runtime &runtime,
 /// `import Kitron` as a clang module and cannot resolve C++ stdlib headers
 /// there. `conformsToProtocol:` sees class-extension conformances, which is
 /// what the bridgeless TurboModuleManager provider checks.
+/// The event sink the Rust core calls. `context` is the `KitronModule`.
+/// Declared before the class so `-init` can install it.
+static void KitronEventSinkTrampoline(uintptr_t context,
+                                       const char *name,
+                                       const char *payloadJSON);
+
 @interface KitronModule () <RCTTurboModule>
+/// Delivers one runtime event to the UI (resolves the parked promise).
+- (void)deliverEventNamed:(NSString *)name payload:(NSString *)payloadJSON;
+/// The oldest buffered event, as a JSON envelope.
+- (NSString *)takePendingEvent;
 - (std::shared_ptr<facebook::react::TurboModule>)getTurboModule:
     (const facebook::react::ObjCTurboModule::InitParams &)params;
 @end
 
 @implementation KitronModule {
   dispatch_queue_t _invokeQueue;
+  /// Resolver parked by `nextEvent` — resolved when an event happens.
+  RCTPromiseResolveBlock _eventResolve;
+  /// Events that arrived before the UI asked for them.
+  NSMutableArray<NSString *> *_pendingEvents;
 }
 
 RCT_EXPORT_MODULE(KitronRuntime)
@@ -200,8 +214,48 @@ RCT_EXPORT_MODULE(KitronRuntime)
 - (instancetype)init {
   if (self = [super init]) {
     _invokeQueue = dispatch_queue_create("dev.kitron.invoke", DISPATCH_QUEUE_SERIAL);
+    _pendingEvents = [NSMutableArray new];
+    // Ask the Rust core to push its events here instead of queueing them for
+    // a poll (the UI waits on `nextEvent`).
+    kitron_set_event_sink((uintptr_t)(__bridge void *)self, KitronEventSinkTrampoline);
   }
   return self;
+}
+
+- (void)deliverEventNamed:(NSString *)name payload:(NSString *)payloadJSON {
+  id payload = KitronReadEnvelopeJSON(payloadJSON) ?: @{};
+  NSString *envelope = [self eventEnvelopeWithName:name payload:payload];
+  if (_eventResolve != nil) {
+    RCTPromiseResolveBlock resolve = _eventResolve;
+    _eventResolve = nil;
+    resolve(envelope);
+    return;
+  }
+  @synchronized(_pendingEvents) {
+    [_pendingEvents addObject:envelope];
+  }
+}
+
+- (NSString *)takePendingEvent {
+  @synchronized(_pendingEvents) {
+    if (_pendingEvents.count == 0) {
+      return @"";
+    }
+    NSString *event = _pendingEvents.firstObject;
+    [_pendingEvents removeObjectAtIndex:0];
+    return event;
+  }
+}
+
+/// Serializes one event into the `{name, payload}` envelope the JS layer
+/// expects.
+- (NSString *)eventEnvelopeWithName:(NSString *)name payload:(id)payload {
+  NSDictionary *event = @{@"name" : name, @"payload" : payload};
+  NSData *data = [NSJSONSerialization dataWithJSONObject:event options:0 error:NULL];
+  if (data == nil) {
+    return @"{}";
+  }
+  return [[NSString alloc] initWithData:data encoding:NSUTF8StringEncoding] ?: @"{}";
 }
 
 RCT_EXPORT_METHOD(appQuit:(RCTPromiseResolveBlock)resolve
@@ -239,6 +293,22 @@ RCT_EXPORT_METHOD(windowOp:(nonnull NSNumber *)windowId
 RCT_EXPORT_METHOD(eventsDrain:(RCTPromiseResolveBlock)resolve
                   rejecter:(__unused RCTPromiseRejectBlock)reject) {
   resolve(KitronCopyAndFree(kitron_events_drain()));
+}
+
+// ---------------------------------------------------------------------------
+// Push events — the UI waits on a promise the runtime resolves when an event
+// happens (no polling).
+// ---------------------------------------------------------------------------
+
+RCT_EXPORT_METHOD(nextEvent:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  if (_pendingEvents.count > 0) {
+    resolve([self takePendingEvent]);
+    return;
+  }
+  // Otherwise park the resolver: the Rust sink resolves it as soon as an
+  // event happens.
+  _eventResolve = [resolve copy];
 }
 
 RCT_EXPORT_METHOD(nodeStart:(RCTPromiseResolveBlock)resolve
@@ -331,6 +401,24 @@ RCT_EXPORT_METHOD(menuSetApplicationMenu:(NSString *)definitionJSON
 }
 
 @end
+
+// ---------------------------------------------------------------------------
+// Push events — implementation of the sink the Rust core calls
+// ---------------------------------------------------------------------------
+
+/// The event sink the Rust core calls. `context` is the `KitronModule`.
+static void KitronEventSinkTrampoline(uintptr_t context,
+                                       const char *name,
+                                       const char *payloadJSON) {
+  if (context == 0 || name == nullptr) {
+    return;
+  }
+  // The context is the module's bridged pointer; ARC needs the round trip
+  // through `__bridge id`.
+  KitronModule *module = (KitronModule *)(__bridge id)(void *)context;
+  [module deliverEventNamed:[NSString stringWithUTF8String:name]
+                    payload:[NSString stringWithUTF8String:payloadJSON ?: "{}"]];
+}
 
 // ---------------------------------------------------------------------------
 // Swift-facing helpers (the app's AppDelegate drives the lifecycle)

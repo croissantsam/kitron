@@ -40,6 +40,8 @@ export interface KitronNativeModule {
   windowGet(id: number): Promise<string>;
   windowOp(id: number, op: string, argsJSON: string): Promise<string>;
   eventsDrain(): Promise<string>;
+  /** Resolves with the next runtime event (push delivery — no polling). */
+  nextEvent(): Promise<string>;
   nodeStart(): Promise<string>;
   nodeStop(): Promise<string>;
   nodeInvoke(method: string, payloadJSON: string, timeoutMs: number): Promise<string>;
