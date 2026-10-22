@@ -111,7 +111,7 @@ fn abi_probe() {
             .unwrap_or_default();
         assert_ne!(window_ptr, 0, "create must hand the renderer its HWND");
         assert_eq!(
-            kitron_windows::kitron_windows_renderer_hwnd(),
+            kitron_windows::kitron_windows_renderer_hwnd() as u64,
             window_ptr,
             "the hook and the envelope agree on the HWND"
         );
@@ -176,7 +176,7 @@ fn abi_probe() {
         use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
         use windows::Win32::UI::WindowsAndMessaging::{SendMessageW, WM_CLOSE, WM_COMMAND};
         let hwnd = HWND(window_ptr as *mut core::ffi::c_void);
-        SendMessageW(hwnd, WM_COMMAND, WPARAM(1), LPARAM(0));
+        SendMessageW(hwnd, WM_COMMAND, Some(WPARAM(1)), Some(LPARAM(0)));
         assert!(event("menu.action"), "WM_COMMAND command id 1 → menu.action");
         assert!(
             captured()
@@ -222,7 +222,7 @@ fn abi_probe() {
             !event("window.closed"),
             "nothing closed the window before the veto test"
         );
-        SendMessageW(hwnd, WM_CLOSE, WPARAM(0), LPARAM(0));
+        SendMessageW(hwnd, WM_CLOSE, Some(WPARAM(0)), Some(LPARAM(0)));
         let list = ok_result(kitron_windows::kitron_window_list(), "vetoList");
         assert_eq!(
             list.as_array().map(|v| v.len()),
@@ -239,7 +239,7 @@ fn abi_probe() {
             ),
             "preventClose off",
         );
-        SendMessageW(hwnd, WM_CLOSE, WPARAM(0), LPARAM(0));
+        SendMessageW(hwnd, WM_CLOSE, Some(WPARAM(0)), Some(LPARAM(0)));
         assert!(event("window.closed"), "WM_CLOSE pushes window.closed");
         assert!(event("app.quit"), "the last window closing quits the app");
         let list = ok_result(kitron_windows::kitron_window_list(), "emptyList");
