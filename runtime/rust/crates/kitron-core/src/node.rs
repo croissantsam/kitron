@@ -1,24 +1,57 @@
-//! Node sidecar wiring between `Core` and `kitron_node_supervisor`.
+//! Backend sidecar wiring between `Core` and the backend supervisor.
+//!
+//! The backend is a separate process speaking the Kitron NDJSON protocol.
+//! Two kinds are supported (spec §29):
+//!
+//! - `node` — a TypeScript/JavaScript backend run by the embedded Node host.
+//! - `binary` — a compiled backend executable (e.g. a Rust crate), speaking
+//!   the very same protocol. The UI cannot tell the difference.
 
 use std::{collections::HashMap, sync::Arc};
 
 use crate::{config_loader::resolve_app_path, Core, EventName};
 use kitron_node_supervisor::{NodeEvent, NodeStatus, SpawnOptions};
-use kitron_protocol::KitronError;
+use kitron_protocol::{BackendConfig, KitronError};
 
-/// Builds spawn options for the embedded Node process from env + config:
-/// - `KITRON_NODE_PATH`: node binary (absolute path)
+/// The backend the app asked for, resolved from `kitron.config.ts`.
+///
+/// `backend` wins when present; the legacy `node` section is still honoured.
+pub fn resolve_backend_config(core: &Core) -> BackendConfig {
+    if let Some(backend) = &core.config.backend {
+        return backend.clone();
+    }
+    BackendConfig {
+        kind: Some("node".to_string()),
+        entry: core.config.node.entry.clone(),
+        auto_start: Some(core.config.node.auto_start),
+    }
+}
+
+/// Builds the spawn options for the app's backend process.
+///
+/// - `KITRON_NODE_PATH`: node binary (absolute path) — TypeScript backends
 /// - `KITRON_RUNTIME_NODE_DIR`: directory containing Kitron's `host.mjs`
 /// - app root: `Core::root_dir`
 ///
 /// The backend entry from the app config is resolved against the app root.
-pub fn spawn_options_from_env(core: &Core, entry_rel: &str) -> SpawnOptions {
-    let node_path = node_binary_path();
-    let runtime_dir = std::env::var("KITRON_RUNTIME_NODE_DIR")
-        .unwrap_or_else(|_| format!("{}/runtime/node", core.root_dir));
-    let entry_abs = resolve_app_path(&core.root_dir, entry_rel);
+pub fn spawn_options_from_config(core: &Core, config: &BackendConfig) -> SpawnOptions {
+    let entry_rel = config.entry.clone().unwrap_or_default();
+    let entry_abs = resolve_app_path(&core.root_dir, &entry_rel);
+
+    let (command, args) = match config.kind() {
+        "binary" => (entry_abs.clone(), Vec::new()),
+        _ => {
+            let runtime_dir = std::env::var("KITRON_RUNTIME_NODE_DIR")
+                .unwrap_or_else(|_| format!("{}/runtime/node", core.root_dir));
+            (
+                node_binary_path(),
+                vec![format!("{runtime_dir}/host.mjs"), entry_abs.clone()],
+            )
+        }
+    };
 
     let mut env: HashMap<String, String> = HashMap::new();
+    env.insert("KITRON_BACKEND_HOST".to_string(), "1".to_string());
     env.insert("KITRON_NODE_HOST".to_string(), "1".to_string());
     env.insert(
         "KITRON_APP_META".to_string(),
@@ -41,8 +74,8 @@ pub fn spawn_options_from_env(core: &Core, entry_rel: &str) -> SpawnOptions {
     }
 
     SpawnOptions {
-        node_path,
-        host_script: format!("{runtime_dir}/host.mjs"),
+        command,
+        args,
         entry: entry_abs,
         workdir: core.root_dir.clone(),
         env,
@@ -77,8 +110,12 @@ pub fn spawn_event_relayer(
             for event in receiver {
                 match event {
                     NodeEvent::Hello { pid, entry, .. } => {
-                        logger
-                            .info("node", &format!("backend registered (pid {pid}, entry {entry})"));
+                        let described = if entry.is_empty() {
+                            "backend".to_string()
+                        } else {
+                            format!("backend {entry}")
+                        };
+                        logger.info("node", &format!("{described} registered (pid {pid})"));
                     }
                     NodeEvent::Ready { handlers } => {
                         logger.info("node", &format!("backend ready ({handlers} handlers)"));

@@ -164,6 +164,7 @@ export function serializeConfig(config: KitronConfig): string {
   return JSON.stringify({
     app: config.app,
     window: config.window ?? {},
+    backend: config.backend,
     node: config.node ?? {},
     permissions: config.permissions ?? [],
     extra: config.extra ?? {},
@@ -182,6 +183,60 @@ export async function loadAppConfig(appRoot: string): Promise<KitronConfig> {
     log.fail("kitron.config.ts must export {app:{name,identifier,…}}");
   }
   return config;
+}
+
+/** The package name declared by a Cargo manifest (first `name = "…"`). */
+export function cargoPackageName(manifest: string): string | null {
+  const source = fs.readFileSync(manifest, "utf8");
+  const match = /^\s*name\s*=\s*"([^"]+)"/m.exec(source);
+  return match?.[1] ?? null;
+}
+
+/**
+ * Resolves the app's backend and builds it when it is a Rust crate.
+ *
+ * A `backend/Cargo.toml` means the app's backend is written in Rust: the CLI
+ * compiles it and points the runtime at the resulting binary, so the
+ * developer never has to deal with Cargo (spec §29).
+ */
+export function resolveBackend(appRoot: string, config: KitronConfig): KitronConfig {
+  const manifest = path.join(appRoot, "backend", "Cargo.toml");
+  if (!fs.existsSync(manifest)) {
+    return config;
+  }
+
+  const profile = config.backend?.type === "binary" && config.backend.entry?.includes("debug")
+    ? "debug"
+    : "release";
+  const args = ["build"];
+  if (profile === "release") {
+    args.push("--release");
+  }
+  args.push("--manifest-path", manifest);
+
+  log.info(`building the Rust backend (cargo ${args.join(" ")})…`);
+  const build = run("cargo", args, { cwd: appRoot });
+  if (build.status !== 0) {
+    throw new Error("cargo build failed for the app's Rust backend");
+  }
+
+  const name = cargoPackageName(manifest);
+  if (!name) {
+    throw new Error(`could not read the package name from ${manifest}`);
+  }
+  const binary = path.join(appRoot, "backend", "target", profile, name);
+  if (!fs.existsSync(binary)) {
+    throw new Error(`the Rust backend binary was not produced at ${binary}`);
+  }
+  log.info(`Rust backend ready: ${path.relative(appRoot, binary)}`);
+  return {
+    ...config,
+    backend: {
+      type: "binary",
+      entry: binary,
+      autoStart: config.backend?.autoStart ?? config.node?.autoStart ?? true,
+    },
+  };
 }
 
 /** Where `kitron create`/`dev` got run against (default: cwd). */

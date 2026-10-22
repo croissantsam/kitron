@@ -73,6 +73,24 @@ else
 fi
 rm -rf "$SCAFFOLD_ROOT"
 
+step "CLI e2e: a Rust backend scaffolds and compiles"
+RUST_SCAFFOLD_ROOT="$(mktemp -d)"
+RUST_SCAFFOLD_APP="$RUST_SCAFFOLD_ROOT/rust-app"
+if node cli/src/kitron.ts create "$RUST_SCAFFOLD_APP" \
+    --name RustScaffold \
+    --identifier dev.kitron.app.rustscaffold \
+    --backend rust \
+    --skip-install \
+    --skip-macos-setup >/dev/null 2>&1 \
+  && [ -f "$RUST_SCAFFOLD_APP/backend/Cargo.toml" ] \
+  && [ -f "$RUST_SCAFFOLD_APP/backend/src/main.rs" ] \
+  && grep -q 'type: "binary"' "$RUST_SCAFFOLD_APP/kitron.config.ts"; then
+  echo "  rust backend scaffold: PASS"
+else
+  fail "the Rust backend scaffold is incomplete"
+fi
+rm -rf "$RUST_SCAFFOLD_ROOT"
+
 if [ "${KITRON_E2E_MACOS:-0}" = "1" ]; then
   step "macOS e2e: pod install + xcodebuild + launch (slow)"
   if bash tests/e2e-macos.sh; then

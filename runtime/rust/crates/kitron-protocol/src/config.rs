@@ -13,6 +13,10 @@ use serde_json::Value;
 pub struct KitronConfig {
     pub app: AppConfig,
     pub window: WindowConfig,
+    /// The app's backend (spec §28/§29). `node` is the legacy spelling and
+    /// still works; `backend` covers both TypeScript (Node) and Rust backends.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub backend: Option<BackendConfig>,
     pub node: NodeConfig,
     /// Permission grants from the app (spec §23). Values are explicit module
     /// names; presence in this list means "this app is allowed to use the API".
@@ -20,6 +24,39 @@ pub struct KitronConfig {
     /// Unrecognized keys preserved for forward compatibility.
     #[serde(flatten)]
     pub extra: Value,
+}
+
+/// The app's backend process (spec §29).
+///
+/// `kind` selects the runtime:
+/// - `"node"` (default) — a TypeScript/JavaScript backend run by the embedded
+///   Node host (`backend/index.ts`).
+/// - `"binary"` — a compiled backend executable (e.g. a Rust crate built with
+///   `cargo build --release`). It speaks the same protocol, so the UI cannot
+///   tell the difference.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", default)]
+pub struct BackendConfig {
+    /// `"node"` (default) or `"binary"`.
+    #[serde(rename = "type")]
+    pub kind: Option<String>,
+    /// Backend entry: the TypeScript file for `node`, the executable for
+    /// `binary`.
+    pub entry: Option<String>,
+    /// When false, Kitron does not spawn the backend at app start.
+    pub auto_start: Option<bool>,
+}
+
+impl BackendConfig {
+    /// The backend runtime kind, defaulting to Node.
+    pub fn kind(&self) -> &str {
+        self.kind.as_deref().unwrap_or("node")
+    }
+
+    /// Whether the backend should be spawned automatically (default: true).
+    pub fn auto_start(&self) -> bool {
+        self.auto_start.unwrap_or(true)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -99,5 +136,30 @@ mod tests {
         assert_eq!(cfg.node.entry.as_deref(), Some("./backend/index.ts"));
         assert!(cfg.node.auto_start, "auto_start defaults to true");
         assert!(cfg.extra.is_object());
+    }
+
+    #[test]
+    fn parses_a_binary_backend() {
+        let json = r#"{
+          "app": { "name": "Rust App", "identifier": "com.example.rust", "version": "1.0.0" },
+          "backend": { "type": "binary", "entry": "/apps/demo/backend", "autoStart": true }
+        }"#;
+        let cfg: KitronConfig = serde_json::from_str(json).unwrap();
+        let backend = cfg.backend.expect("the backend section is parsed");
+        assert_eq!(backend.kind(), "binary");
+        assert_eq!(backend.entry.as_deref(), Some("/apps/demo/backend"));
+        assert!(backend.auto_start());
+    }
+
+    #[test]
+    fn the_legacy_node_section_still_works() {
+        let json = r#"{
+          "app": { "name": "App", "identifier": "com.example.app", "version": "1.0.0" },
+          "node": { "entry": "./backend/index.ts" }
+        }"#;
+        let cfg: KitronConfig = serde_json::from_str(json).unwrap();
+        assert!(cfg.backend.is_none());
+        assert_eq!(cfg.node.entry.as_deref(), Some("./backend/index.ts"));
+        assert!(cfg.node.auto_start);
     }
 }

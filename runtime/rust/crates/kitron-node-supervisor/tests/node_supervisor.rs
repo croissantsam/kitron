@@ -41,8 +41,11 @@ fn spawns_the_node_host_and_round_trips_an_invoke() {
     let workdir = repo_path("node");
 
     let supervisor = NodeSupervisor::spawn(&SpawnOptions {
-        node_path,
-        host_script: host_script.to_string_lossy().to_string(),
+        command: node_path,
+        args: vec![
+            host_script.to_string_lossy().to_string(),
+            entry.to_string_lossy().to_string(),
+        ],
         entry: entry.to_string_lossy().to_string(),
         workdir: workdir.to_string_lossy().to_string(),
         env: Default::default(),
@@ -92,8 +95,11 @@ fn reports_backend_events() {
     };
 
     let supervisor = NodeSupervisor::spawn(&SpawnOptions {
-        node_path,
-        host_script: repo_path("node/host.mjs").to_string_lossy().to_string(),
+        command: node_path,
+        args: vec![
+            repo_path("node/host.mjs").to_string_lossy().to_string(),
+            repo_path("node/test-backend.mjs").to_string_lossy().to_string(),
+        ],
         entry: repo_path("node/test-backend.mjs").to_string_lossy().to_string(),
         workdir: repo_path("node").to_string_lossy().to_string(),
         env: Default::default(),

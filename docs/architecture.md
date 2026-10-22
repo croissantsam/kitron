@@ -97,23 +97,33 @@ nativeModuleProxy.KitronRuntime  →  __turboModuleProxy.get(…)  →  NativeMo
 
 ---
 
-## 3. React Native ⇄ Node (typed RPC)
+## 3. React Native ⇄ backend (typed RPC)
 
-The embedded Node runtime is a child process started by the Rust supervisor
-(`kitron-node-supervisor`). The bootstrap lives in `runtime/node/host.mjs` and
-speaks **NDJSON frames** over stdio pipes — one JSON object per line.
+The backend is a **separate process** that speaks the Kitron NDJSON protocol
+(spec §28/§30) on its stdio. Two runtimes are supported and are
+interchangeable — the UI cannot tell them apart:
+
+| Backend                 | How it is spawned                                | SDK                      |
+|-------------------------|--------------------------------------------------|--------------------------|
+| TypeScript / JavaScript | `node <host.mjs> <backend/index.ts>`              | `kitron` (`@kitron/node`) |
+| Rust                    | the compiled binary (`backend/target/release/…`)  | `kitron-backend` crate   |
 
 ```text
-Rust → Node   {"type":"invoke","id":1,"method":"math.add","payload":{"a":19,"b":23}}
-Node → Rust   {"type":"result","id":1,"result":{"sum":42}}
-Node → Rust   {"type":"error","id":1,"code":"USER_NOT_FOUND","message":"…","platform":"macos"}
-Node → Rust   {"type":"log","level":"info","message":"backend ready"}
-Node → Rust   {"type":"event","name":"backend.event","payload":{…}}
-Rust → Node   {"type":"shutdown","reason":"app-quit"}
+Rust → backend   {"type":"invoke","id":1,"method":"math.add","payload":{"a":19,"b":23}}
+backend → Rust   {"type":"result","id":1,"result":{"sum":42}}
+backend → Rust   {"type":"error","id":1,"code":"USER_NOT_FOUND","message":"…","platform":"macos"}
+backend → Rust   {"type":"log","level":"info","message":"backend ready"}
+backend → Rust   {"type":"event","name":"backend.event","payload":{…}}
+Rust → backend   {"type":"shutdown","reason":"app-quit"}
 ```
 
 Why not localhost HTTP (§30): no port to pick, no TLS/socket overhead, no
 second serialization boundary, and the transport dies with the process.
+
+The supervisor (`kitron-node-supervisor`) spawns *a command* — it knows
+nothing about the backend's language, only the protocol. The CLI resolves
+which one it is (`kitron.config.ts` → `backend.type`) and compiles a Rust
+backend before launching.
 
 Errors are always typed (§33):
 
@@ -129,7 +139,8 @@ Errors are always typed (§33):
 |------------------------|---------------------------------------------------------------------|
 | `kitron-protocol`      | Config schema, wire frames, typed error codes (no I/O).            |
 | `kitron-core`          | Runtime state: window registry, event bus, config loader, logger.  |
-| `kitron-node-supervisor` | Spawns/monitors the Node host, pumps frames, correlates replies. |
+| `kitron-node-supervisor` | Spawns/monitors the backend process, pumps frames, correlates replies. |
+| `kitron-backend`       | The SDK an app's **Rust backend** is written against.               |
 | `kitron-macos`         | AppKit/Foundation bindings: `NSWindow`, `NSMenu`, lifecycle, tray. |
 
 `kitron-macos` compiles to a static library (`libkitron_macos.a`) that the

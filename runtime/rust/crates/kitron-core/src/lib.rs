@@ -117,31 +117,33 @@ impl Core {
         !(self.termination_cancelled.load(std::sync::atomic::Ordering::SeqCst))
     }
 
-    // -- Node backend lifecycle (spec §28) -----------------------------------
+    // -- Backend lifecycle (spec §28) -----------------------------------------
 
-    /// Starts (or returns the existing) embedded Node backend. No-op error
-    /// when the config lacks `node.entry` or `node.autoStart === false`.
+    /// Starts (or returns the existing) backend process. The backend is
+    /// either a TypeScript entry run by the embedded Node host or a compiled
+    /// binary (Rust) — both speak the same protocol.
     pub fn start_node_from_config(&self) -> Result<Arc<kitron_node_supervisor::NodeSupervisor>, KitronError> {
         if let Some(sup) = self.node.lock().unwrap().clone() {
             return Ok(sup);
         }
-        let entry = match self.config.node.entry.as_deref() {
-            e if e.is_some_and(|p| !p.is_empty()) => e.unwrap().to_string(),
+        let backend = node::resolve_backend_config(self);
+        match backend.entry.as_deref() {
+            Some(entry) if !entry.is_empty() => {}
             _ => {
                 return Err(KitronError::code(
                     "NODE_NOT_CONFIGURED",
-                    "kitron.config.ts has no node.entry",
+                    "kitron.config.ts has no backend.entry (or node.entry)",
                 ));
             }
         };
-        if !self.config.node.auto_start {
+        if !backend.auto_start() {
             return Err(KitronError::code(
                 "NODE_AUTO_START_DISABLED",
-                "node.autoStart is disabled in the app config",
+                "backend.autoStart is disabled in the app config",
             ));
         }
 
-        let opts = node::spawn_options_from_env(self, &entry);
+        let opts = node::spawn_options_from_config(self, &backend);
         let supervisor =
             kitron_node_supervisor::NodeSupervisor::spawn(&opts).inspect_err(|e| {
                 self.logger.error("node", &format!("spawn failed: {}", e.message));

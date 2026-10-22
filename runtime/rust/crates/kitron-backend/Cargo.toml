@@ -1,0 +1,14 @@
+[package]
+name = "kitron-backend"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Write a Kitron app's backend in Rust — same protocol as the TypeScript backend"
+
+[dependencies]
+kitron-protocol.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+kitron-node-supervisor.workspace = true

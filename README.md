@@ -112,6 +112,50 @@ export const handlers = {
 
 ---
 
+### The app's backend: TypeScript **or** Rust
+
+The backend is a separate process that speaks the Kitron protocol (NDJSON
+frames over stdio). **Both languages are first-class** — the UI cannot tell
+the difference, `backend.invoke(method, payload)` works identically.
+
+**TypeScript backend** (default) — run by the embedded Node host:
+
+```ts
+// backend/index.ts
+import { backend } from "kitron";
+backend.onInvoke("math.add", ({ a, b }) => ({ sum: a + b }));
+```
+
+**Rust backend** — a crate the CLI compiles for you:
+
+```rust
+// backend/src/main.rs
+use kitron_backend::prelude::*;
+
+fn main() -> std::io::Result<()> {
+    let mut backend = Backend::new();
+    backend.on_invoke("math.add", |payload| {
+        let a = payload["a"].as_f64().unwrap_or(0.0);
+        let b = payload["b"].as_f64().unwrap_or(0.0);
+        Ok(serde_json::json!({ "sum": a + b }))
+    });
+    backend.run()
+}
+```
+
+Scaffold one with `kitron create my-app --backend rust`; `kitron dev` then
+compiles the crate (`cargo build --release`) and points the runtime at the
+binary — **the developer never runs Cargo, and never touches the bridge, the
+window layer or any native code.**
+
+```ts
+// kitron.config.ts — the CLI fills in the built binary path
+export default {
+  app: { name: "My App", identifier: "com.example.myapp", version: "1.0.0" },
+  backend: { type: "binary", entry: "./backend/target/release/backend", autoStart: true },
+};
+```
+
 ## CLI (spec §35)
 
 | Command            | What it does                                                                 |
@@ -122,6 +166,9 @@ export const handlers = {
 | `kitron package`   | Wraps the Release `.app` into a macOS `.dmg`.                                 |
 | `kitron run`       | Launches the most recent Release build.                                       |
 | `kitron doctor`    | Checks the toolchain (Node, Rust, Xcode, CocoaPods, Metro).                   |
+
+`kitron create --backend rust` scaffolds a **Rust backend** instead of the
+TypeScript one (same protocol, same `backend.invoke` API).
 
 ---
 

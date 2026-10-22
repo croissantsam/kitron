@@ -5,7 +5,7 @@ import process from "node:process";
 
 import type { KitronConfig } from "@kitron/core";
 
-import { loadAppConfig, log, resolveAppRoot, copyDir, run } from "./lib.ts";
+import { loadAppConfig, log, resolveAppRoot, copyDir, run, resolveBackend } from "./lib.ts";
 import { doctor } from "./doctor.ts";
 import { create, syncNodeHost } from "./create.ts";
 import {
@@ -47,15 +47,14 @@ function parseFlag(argv: string[], flag: string): string | undefined {
 async function dev(argv: string[]): Promise<number> {
   const appRoot = resolveAppRoot(argv.find((arg) => !arg.startsWith("-")));
   const port = Number(parseFlag(argv, "--port") ?? 8081);
-  const config = await loadAppConfig(appRoot);
+  const config = resolveBackend(appRoot, await loadAppConfig(appRoot));
 
   syncPod(appRoot);
   ensurePods(appRoot);
   void (await startMetro(appRoot, port));
   const appPath = await buildXcode(appRoot, "Debug");
   syncNodeHost(appRoot);
-  const config2 = config;
-  const env = kitronLaunchEnv(appRoot, config2, true);
+  const env = kitronLaunchEnv(appRoot, config, true);
   launchApp(appPath, env);
   // Keep the CLI attached to the app + Metro until they exit.
   await new Promise(() => {});
@@ -65,7 +64,7 @@ async function dev(argv: string[]): Promise<number> {
 /** `kitron build [dir]` — Release .app with backend + Node runtime embedded. */
 async function build(argv: string[]): Promise<number> {
   const appRoot = resolveAppRoot(argv.find((arg) => !arg.startsWith("-")));
-  const config = await loadAppConfig(appRoot);
+  const config = resolveBackend(appRoot, await loadAppConfig(appRoot));
 
   syncPod(appRoot);
   ensurePods(appRoot);
@@ -203,7 +202,7 @@ async function packageCommand(argv: string[]): Promise<number> {
 /** `kitron run [dir]` — launch the most recent Release build with env. */
 async function runCommand(argv: string[]): Promise<number> {
   const appRoot = resolveAppRoot(argv.find((arg) => !arg.startsWith("-")));
-  const config = await loadAppConfig(appRoot);
+  const config = resolveBackend(appRoot, await loadAppConfig(appRoot));
   const appPath = findBuiltApp(appRoot, "Release");
   launchApp(appPath, kitronLaunchEnv(appRoot, config, false));
   await new Promise(() => {});

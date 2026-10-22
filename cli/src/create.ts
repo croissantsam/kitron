@@ -23,6 +23,8 @@ interface CreateArgs {
   identifier?: string;
   skipInstall: boolean;
   skipMacosSetup: boolean;
+  /** Backend language: `typescript` (default) or `rust`. */
+  backend: "typescript" | "rust";
 }
 
 function parseArgs(argv: string[]): CreateArgs {
@@ -31,6 +33,7 @@ function parseArgs(argv: string[]): CreateArgs {
   let identifier: string | undefined;
   let skipInstall = process.env.KITRON_CREATE_SKIP_INSTALL === "1";
   let skipMacosSetup = process.env.KITRON_CREATE_SKIP_MACOS === "1";
+  let backend: "typescript" | "rust" = "typescript";
   for (let index = 0; index < argv.length; index += 1) {
     const arg: string | undefined = argv[index];
     if (arg === undefined) {
@@ -40,6 +43,12 @@ function parseArgs(argv: string[]): CreateArgs {
       name = argv[++index];
     } else if (arg === "--identifier") {
       identifier = argv[++index];
+    } else if (arg === "--backend") {
+      const value = argv[++index];
+      if (value !== "rust" && value !== "typescript") {
+        throw new Error("--backend expects `typescript` or `rust`");
+      }
+      backend = value;
     } else if (arg === "--skip-install") {
       skipInstall = true;
     } else if (arg === "--skip-macos-setup") {
@@ -49,7 +58,9 @@ function parseArgs(argv: string[]): CreateArgs {
     }
   }
   if (!destination) {
-    throw new Error("usage: kitron create <dir> [--name N] [--identifier ID]");
+    throw new Error(
+      "usage: kitron create <dir> [--name N] [--identifier ID] [--backend typescript|rust]",
+    );
   }
   return {
     destination: path.resolve(destination),
@@ -57,6 +68,7 @@ function parseArgs(argv: string[]): CreateArgs {
     identifier,
     skipInstall,
     skipMacosSetup,
+    backend,
   };
 }
 
@@ -363,7 +375,9 @@ export async function create(argv: string[]): Promise<number> {
 
   log.info(`scaffolding ${projectName} → ${destination}`);
   fs.mkdirSync(path.dirname(destination), { recursive: true });
-  copyDir(APP_TEMPLATE_ROOT, destination);
+  // `backend-rust` is the source of the Rust backend variant — it is copied
+  // into `backend/` only when the app asks for it.
+  copyDir(APP_TEMPLATE_ROOT, destination, { ignore: ["backend-rust"] });
   fs.renameSync(path.join(destination, "gitignore"), path.join(destination, ".gitignore"));
 
   // Template placeholders: name + identifier in package.json & config & README.
@@ -378,6 +392,26 @@ export async function create(argv: string[]): Promise<number> {
       [/dev\.croissantlabs\.hello-kitron/g, identifier],
     ],
   );
+
+  // A Rust backend replaces the TypeScript one: the CLI compiles it and
+  // points the runtime at the binary, so the developer only writes Rust.
+  if (args.backend === "rust") {
+    log.info("using the Rust backend (backend/Cargo.toml)");
+    fs.rmSync(path.join(destination, "backend"), { recursive: true, force: true });
+    copyDir(
+      path.join(APP_TEMPLATE_ROOT, "backend-rust"),
+      path.join(destination, "backend"),
+    );
+    const configPath = path.join(destination, "kitron.config.ts");
+    const config = fs.readFileSync(configPath, "utf8");
+    fs.writeFileSync(
+      configPath,
+      config.replace(
+        /  node: \{[\s\S]*?\n  \},\n/,
+        '  backend: {\n    type: "binary",\n    entry: "./backend/target/release/backend",\n    autoStart: true,\n  },\n',
+      ),
+    );
+  }
 
   // 1. Install JS dependencies.
   if (!args.skipInstall) {

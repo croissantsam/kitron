@@ -1,0 +1,12 @@
+[package]
+name = "backend"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+publish = false
+
+[dependencies]
+# The Kitron backend SDK — vendored with the app, so the backend always
+# speaks the same protocol as the runtime.
+kitron-backend = { path = "../node_modules/@kitron/sdk/runtime/rust/crates/kitron-backend" }
+serde_json = "1"

@@ -68,14 +68,19 @@ pub struct NodeStatus {
     pub last_error: Option<KitronError>,
 }
 
-/// Configuration used to start a Node host process.
+/// Configuration used to start a backend process.
+///
+/// The backend is language-agnostic: the supervisor only knows how to spawn a
+/// command and speak the NDJSON protocol with it. A TypeScript backend is
+/// `node <host.mjs> <entry>`; a Rust backend is the compiled binary itself.
 #[derive(Debug, Clone)]
 pub struct SpawnOptions {
-    /// Absolute node binary path (`KITRON_NODE_PATH` or PATH fallback).
-    pub node_path: String,
-    /// Absolute path to the Kitron node host bootstrap script.
-    pub host_script: String,
-    /// Absolute path to the app's backend entry (TypeScript supported).
+    /// The executable to spawn: `node` for a TypeScript backend, or the app's
+    /// compiled backend binary (Rust) for a `binary` backend.
+    pub command: String,
+    /// Arguments passed to the command (e.g. `[host.mjs, entry]` for Node).
+    pub args: Vec<String>,
+    /// The backend entry, reported in the status snapshot and the logs.
     pub entry: String,
     /// Working directory for the child process.
     pub workdir: String,
@@ -132,12 +137,13 @@ struct EventChannels {
 }
 
 impl NodeSupervisor {
-    /// Spawns the Node host process and starts its supervision threads.
+    /// Spawns the backend process and starts its supervision threads.
     pub fn spawn(opts: &SpawnOptions) -> Result<NodeSupervisor, KitronError> {
-        let mut cmd = Command::new(&opts.node_path);
-        cmd.arg(&opts.host_script)
-            .arg(&opts.entry)
+        let mut cmd = Command::new(&opts.command);
+        cmd.args(&opts.args)
             .current_dir(&opts.workdir)
+            .env("KITRON_BACKEND_HOST", "1")
+            // Legacy name — the Node host still looks for it.
             .env("KITRON_NODE_HOST", "1");
         for (key, value) in &opts.env {
             cmd.env(key, value);
@@ -399,7 +405,11 @@ fn handle_frame(shared: &Arc<Shared>, tx: &std::sync::mpsc::Sender<NodeEvent>, f
             {
                 let mut meta = shared.status_meta.lock().unwrap();
                 meta.pid = Some(pid);
-                meta.entry = Some(entry.clone());
+                // A compiled backend has no script entry — keep the configured
+                // one (the binary path) in that case.
+                if !entry.is_empty() {
+                    meta.entry = Some(entry.clone());
+                }
             }
             let _ = tx.send(NodeEvent::Hello { pid, entry, host_version });
         }
