@@ -1,12 +1,23 @@
 name: Windows shell check
 #
-# The Windows shell crate (`kitron-windows`) is developed against the Win32
-# API without a Windows machine on hand — this workflow is its compile-and-
-# test gate, mirroring what `cargo check --target x86_64-pc-windows-msvc`
-# covers locally (docs/shell-contracts.md §6).
+# The Windows shell (`kitron-windows` crate + the `kitron-windows-host`
+# process) is developed against the Win32 API without a Windows machine on
+# hand — this workflow is its compile-and-run gate, mirroring what the local
+# `cargo check --target x86_64-pc-windows-msvc` covers (docs/shell-contracts.md
+# §6). Targeted `-p` groups avoid building `kitron-macos` (AppKit + block2 do
+# not resolve on Windows).
 #
-# Targeted `-p` groups avoid building `kitron-macos` (AppKit + block2 do not
-# resolve on Windows).
+# Gates, in order:
+#   1. cargo check of the shell crate (pure compile),
+#   2. `cargo test` of the portable crates (core/protocol/supervisor/backend),
+#   3. the ABI probe: an integration test driving the full shell surface
+#      (windows, ops, menus, clipboard, events, typed errors) through the
+#      exported C ABI on the runner's real desktop session,
+#   4. the host smoke: build the `kitron-windows-host` binary and boot it —
+#      bootstrap → sink → window → menu → message pump → clean shutdown —
+#      asserting the pushed event stream (app.ready, menu.action, app.quit).
+#   5. header ↔ core conformance: the host's Windows `kitron.h` mirrors the
+#      shell crate's exported ABI exactly.
 
 on:
   push:
@@ -39,5 +50,31 @@ jobs:
       - name: Test portable crates on Windows
         run: cargo test -p kitron-core -p kitron-protocol -p kitron-node-supervisor -p kitron-backend -p kitron-windows
 
+      - name: Build the Windows host process
+        run: cargo build -p kitron-windows-host
+
+      - name: ABI probe (windows, ops, menus, clipboard, errors — full surface)
+        run: cargo test -p kitron-windows-host --test abi_probe
+
+      - name: Host smoke (bootstrap → pump → shutdown, events to stdout)
+        shell: bash
+        env:
+          KITRON_HOST_SMOKE: "1"
+          KITRON_CONFIG_JSON: '{"app":{"name":"smoke","identifier":"dev.kitron.smoke","version":"0.1.0"},"permissions":["window","dialog"]}'
+        run: |
+          ./target/debug/kitron-windows-host.exe | tee /tmp/smoke.out
+          grep -F '[event] app.ready' /tmp/smoke.out
+          grep -F '[event] window.created' /tmp/smoke.out
+          grep -F '[event] menu.action {"action":"host.ping"}' /tmp/smoke.out
+          grep -F '[event] app.quit' /tmp/smoke.out
+          grep -F 'pump exited cleanly' /tmp/smoke.out
+
       - name: Clippy on the shell crate
         run: cargo clippy -p kitron-windows -- -D warnings
+
+      - name: Header ↔ core ABI conformance (kitron.h mirrors the exports)
+        shell: bash
+        run: |
+          grep -hoE '"C" fn kitron_[a-z_]+' crates/kitron-windows/src/*.rs | sed 's/.*kitron_/kitron_/' | sort -u > /tmp/crate-exports.txt
+          perl -ne 'print "$1\n" while /(\bkitron_[a-z_]+)\(/g' crates/kitron-windows-host/include/kitron.h | sort -u > /tmp/header-exports.txt
+          diff /tmp/crate-exports.txt /tmp/header-exports.txt
