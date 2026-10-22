@@ -76,6 +76,12 @@ fn event(name: &str) -> bool {
         .any(|entry| entry.starts_with(name))
 }
 
+/// Marks progress so a failing/hanging run can be located post-mortem
+/// (the CI log keeps stdout up to the hang when the run is cancelled).
+fn step(label: &str) {
+    eprintln!("[probe] → {label}");
+}
+
 #[test]
 fn abi_probe() {
     // SAFETY: bootstrap is once-per-process; the harness runs this file as a
@@ -84,6 +90,7 @@ fn abi_probe() {
         std::env::set_var("KITRON_CONFIG_JSON", CONFIG);
 
         // 1. Bootstrap + app bits.
+        step("bootstrap");
         ok_result(kitron_windows::kitron_bootstrap(), "bootstrap");
         let bits = ok_result(kitron_windows::kitron_app_bits_json(), "appBits");
         assert_eq!(bits.get("name").and_then(|v| v.as_str()), Some("probe"));
@@ -95,9 +102,11 @@ fn abi_probe() {
         assert_eq!(bits.get("version").and_then(|v| v.as_str()), Some("0.1.0"));
 
         // 2. Push sink first — the install-time flush hands over boot events.
+        step("sink");
         kitron_windows::kitron_set_event_sink(0, Some(event_sink));
 
         // 3. Window 1 — the RNW host window.
+        step("windowCreate");
         let create = ok_result(
             kitron_windows::kitron_window_create(c_string(
                 r#"{"title":"Probe","width":800,"height":600,"focus":false}"#,
@@ -118,6 +127,7 @@ fn abi_probe() {
         assert!(event("app.ready"), "window 1 creation pushes app.ready");
         assert!(event("window.created"), "…and window.created");
 
+        step("ops");
         // 4. Every surface op (close exercised last; the WindowOp ladder
         //    keeps wire names honest — no invented names).
         for (op, args) in [
@@ -137,6 +147,7 @@ fn abi_probe() {
             ok_result(raw, &format!("op {op}"));
         }
 
+        step("snapshot");
         // 5. Snapshot truth: logical frame (DPI 96 runner → 1.0) + state.
         let snapshot = ok_result(kitron_windows::kitron_window_get(1), "windowGet");
         assert_eq!(snapshot.get("title").and_then(|v| v.as_str()), Some("renamed"));
@@ -158,6 +169,7 @@ fn abi_probe() {
             Some(1)
         );
 
+        step("menu");
         // 6. Menu + accelerator table + WM_COMMAND → menu.action.
         ok_result(
             kitron_windows::kitron_menu_set_application_menu(c_string(
@@ -187,6 +199,7 @@ fn abi_probe() {
             "the menu.action payload carries the action id"
         );
 
+        step("clipboard");
         // 7. Clipboard roundtrip (permission granted in the probe config).
         ok_result(
             kitron_windows::kitron_clipboard_write(c_string("kitron")),
@@ -199,6 +212,7 @@ fn abi_probe() {
             "clipboard roundtrip"
         );
 
+        step("typedErrors");
         // 8. Typed-error paths (never modal): >3 buttons and an unknown id.
         assert!(
             envelope_typed(
@@ -216,6 +230,7 @@ fn abi_probe() {
             "an unknown window id answers WINDOW_NOT_FOUND"
         );
 
+        step("veto");
         // 9. The preventClose veto — user-path only (WM_CLOSE). The window
         //    stays alive: no window.closed, registry keeps it.
         assert!(
@@ -230,6 +245,7 @@ fn abi_probe() {
             "WM_CLOSE with preventClose=true must not close the window"
         );
 
+        step("unveto");
         // 10. Un-veto: WM_CLOSE now closes for real → teardown events.
         ok_result(
             kitron_windows::kitron_window_op(
@@ -250,12 +266,14 @@ fn abi_probe() {
             "the renderer hook clears with the window"
         );
 
+        step("requestQuit");
         // 11. Request-quit lifecycle with no windows left (shell path).
         ok_result(kitron_windows::kitron_app_request_quit(), "requestQuit");
         assert!(event("app.beforeQuit"), "requestQuit pushes beforeQuit first");
         assert_eq!(kitron_windows::kitron_app_can_terminate(), 1, "quit allowed");
         ok_result(kitron_windows::kitron_app_cancel_termination(), "cancelTerm");
 
+        step("drain");
         // 12. The drain stays a valid envelope in pull mode too.
         ok_result(kitron_windows::kitron_events_drain(), "drain");
     }
