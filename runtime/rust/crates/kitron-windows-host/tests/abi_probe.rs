@@ -95,7 +95,7 @@ fn abi_probe() {
         assert_eq!(bits.get("version").and_then(|v| v.as_str()), Some("0.1.0"));
 
         // 2. Push sink first — the install-time flush hands over boot events.
-        kitron_windows::kitron_set_event_sink(0, event_sink);
+        kitron_windows::kitron_set_event_sink(0, Some(event_sink));
 
         // 3. Window 1 — the RNW host window.
         let create = ok_result(

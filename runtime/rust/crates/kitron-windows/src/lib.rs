@@ -20,6 +20,12 @@ pub mod menu;
 pub mod services;
 pub mod window;
 
+// The C ABI is the crate's public face — re-export the integration hooks
+// that live in module files so host code and the probe reach them at the
+// crate root, next to the `kitron_*` fns declared in lib.rs.
+pub use crate::menu::kitron_windows_accelerators;
+pub use crate::window::kitron_windows_renderer_hwnd;
+
 use std::ffi::{c_char, CStr, CString};
 use std::sync::{Arc, Mutex, OnceLock};
 
