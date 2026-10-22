@@ -50,6 +50,13 @@ else
   fail "sdk smoke failed"
 fi
 
+step "bridge conformance (native module ↔ TS API ↔ C ABI, incl. no_mangle)"
+if node tests/bridge-conformance.mjs; then
+  echo "  bridge: PASS"
+else
+  fail "bridge conformance failed"
+fi
+
 step "CLI e2e: kitron create scaffolds a runnable app"
 SCAFFOLD_ROOT="$(mktemp -d)"
 SCAFFOLD_APP="$SCAFFOLD_ROOT/scaffolded-app"
@@ -70,6 +77,20 @@ if node cli/src/kitron.ts create "$SCAFFOLD_APP" \
   fi
 else
   fail "kitron create failed"
+fi
+
+step "CLI e2e: kitron update re-vendors the runtime into an existing app"
+if [ -d "$SCAFFOLD_APP" ]; then
+  if node cli/src/kitron.ts update "$SCAFFOLD_APP" >/dev/null 2>&1 \
+    && [ -f "$SCAFFOLD_APP/.kitron/sdk-vendor.json" ] \
+    && [ -f "$SCAFFOLD_APP/node_modules/@kitron/core/dist/index.js" ] \
+    && [ -f "$SCAFFOLD_APP/node_modules/@kitron/sdk/cli/dist/kitron.js" ] \
+    && [ -f "$SCAFFOLD_APP/node_modules/@kitron/core/src/index.ts" ] \
+    && [ -x "$SCAFFOLD_APP/node_modules/.bin/kitron" ]; then
+    echo "  update: PASS"
+  else
+    fail "kitron update did not re-vendor the app"
+  fi
 fi
 rm -rf "$SCAFFOLD_ROOT"
 

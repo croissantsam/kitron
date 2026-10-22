@@ -247,7 +247,7 @@ export function vendorSdkPackages(appRoot: string, pkgRoot: string): void {
  * `pnpm dev` / `pnpm build` work without a global install (spec §36: the
  * developer must be able to `cd my-app && kitron dev` right away).
  */
-function vendorRuntime(
+export function vendorRuntime(
   appRoot: string,
   pkgRoot: string,
   typescript: typeof import("typescript"),
@@ -301,7 +301,7 @@ function vendorRuntime(
   fs.chmodSync(binPath, 0o755);
 }
 
-function loadTypescript(): typeof import("typescript") {
+export function loadTypescript(): typeof import("typescript") {
   const require = createRequire(import.meta.url);
   // The CLI depends on typescript so it is guaranteed resolvable here.
   return require("typescript") as typeof import("typescript");

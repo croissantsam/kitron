@@ -5,9 +5,15 @@ import process from "node:process";
 
 import type { KitronConfig } from "@kitron/core";
 
-import { loadAppConfig, log, resolveAppRoot, copyDir, run, resolveBackend } from "./lib.ts";
+import { loadAppConfig, log, resolveAppRoot, copyDir, run, resolveBackend, resolveUpdateSourceRoot } from "./lib.ts";
 import { doctor } from "./doctor.ts";
-import { create, syncNodeHost } from "./create.ts";
+import {
+  create,
+  syncNodeHost,
+  vendorRuntime,
+  vendorSdkPackages,
+  loadTypescript,
+} from "./create.ts";
 import {
   buildXcode,
   discoverProject,
@@ -23,7 +29,8 @@ import fs from "node:fs";
 const USAGE = `kitron — desktop runtime for React Native + TypeScript + Node.js
 
 Usage:
-  kitron create <dir> [--name N] [--identifier ID]
+  kitron create <dir> [--name N] [--identifier ID] [--backend rust]
+  kitron update [dir] [--sdk <checkout>]
   kitron doctor
   kitron dev     [dir] [--port 8081]
   kitron build   [dir]
@@ -209,11 +216,62 @@ async function runCommand(argv: string[]): Promise<number> {
   return 0;
 }
 
+/**
+ * `kitron update [dir] [--sdk <checkout>]` — re-vendor the runtime (SDK
+ * packages, CLI, Rust workspace, pod sources, templates) into an existing
+ * app. The natural follow-up to editing the SDK in its checkout: the app
+ * builds against the runtime it ships with, so that shipping runtime must be
+ * refreshed in place — `create` cannot be re-run over a working app.
+ */
+async function updateCommand(argv: string[]): Promise<number> {
+  const appRoot = resolveAppRoot(argv.find((arg) => !arg.startsWith("-")));
+  const sdkFlag = parseFlag(argv, "--sdk");
+
+  if (!fs.existsSync(path.join(appRoot, "kitron.config.ts"))) {
+    log.fail(`${appRoot} is not a Kitron app (no kitron.config.ts)`);
+  }
+
+  const sourceRoot = resolveUpdateSourceRoot(sdkFlag);
+  if (!sourceRoot) {
+    console.error(
+      "kitron update needs the SDK sources. The CLI running vendored inside\n" +
+        "an app cannot self-update: install the kitron CLI globally\n" +
+        "(or run it from a checkout) and retry, or pass --sdk <checkout>.",
+    );
+    return 1;
+  }
+
+  log.info(`updating ${appRoot} from ${sourceRoot}`);
+  vendorSdkPackages(appRoot, sourceRoot);
+  vendorRuntime(appRoot, sourceRoot, loadTypescript());
+  syncNodeHost(appRoot);
+
+  // Stamp for diagnostics (and for tests to observe the refresh).
+  fs.mkdirSync(path.join(appRoot, ".kitron"), { recursive: true });
+  fs.writeFileSync(
+    path.join(appRoot, ".kitron", "sdk-vendor.json"),
+    JSON.stringify({ vendoredAt: new Date().toISOString(), sdk: sourceRoot }, null, 2) + "\n",
+  );
+
+  log.info("vendored @kitron/* packages, the CLI and the runtime into the app.");
+  console.log(
+    [
+      "",
+      "Next steps:",
+      "  • pod sources and the static lib refresh on the next `kitron dev` / `kitron build`",
+      "  • run `pod install` only when the podspec or bridge headers changed",
+    ].join("\n"),
+  );
+  return 0;
+}
+
 export async function main(argv: string[]): Promise<number> {
   const [command, ...rest] = argv;
   switch (command) {
     case "create":
       return create(rest);
+    case "update":
+      return updateCommand(rest);
     case "doctor":
       return doctor();
     case "dev":

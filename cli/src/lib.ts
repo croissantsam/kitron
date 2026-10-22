@@ -30,6 +30,35 @@ export const APP_TEMPLATE_ROOT = path.join(SDK_ROOT, "templates", "app");
 /** The Kitron AppDelegate — substituted into the generated Xcode project. */
 export const MACOS_TEMPLATE_ROOT = path.join(SDK_ROOT, "templates", "macos");
 
+/**
+ * Source root used by `kitron update`: an explicit `--sdk <dir>` (or
+ * KITRON_SDK_ROOT), else the checkout the CLI itself lives in. Returns null
+ * when the CLI runs vendored inside an app — the vendored SDK doesn't carry
+ * the package sources, so it cannot self-update (install the kitron CLI
+ * globally, or pass `--sdk <checkout>`).
+ */
+export function resolveUpdateSourceRoot(explicit?: string): string | null {
+  const fromFlag = explicit ?? process.env.KITRON_SDK_ROOT;
+  if (fromFlag) {
+    return fs.realpathSync(path.resolve(fromFlag));
+  }
+  // Walk up from the CLI package dir looking for a workspace layout
+  // (`packages/core` next to `cli/`). Bounded so a stray vendored install
+  // can't scan the whole disk.
+  let cursor = CLI_PACKAGE_ROOT;
+  for (let depth = 0; depth < 8; depth += 1) {
+    const parent = path.resolve(cursor, "..");
+    if (fs.existsSync(path.join(parent, "packages", "core", "package.json"))) {
+      return parent;
+    }
+    if (parent === cursor) {
+      break;
+    }
+    cursor = parent;
+  }
+  return null;
+}
+
 export type Logger = {
   info: (message: string) => void;
   warn: (message: string) => void;
