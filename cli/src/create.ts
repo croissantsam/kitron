@@ -7,6 +7,7 @@ import { createRequire } from "node:module";
 
 import {
   APP_TEMPLATE_ROOT,
+  MACOS_TEMPLATE_ROOT,
   NODE_HOST_TEMPLATE,
   POD_TEMPLATE_ROOT,
   SDK_ROOT,
@@ -461,7 +462,7 @@ export async function create(argv: string[]): Promise<number> {
       "AppDelegate.swift",
     );
     fs.copyFileSync(
-      path.join(APP_TEMPLATE_ROOT, "kitron-macos", "AppDelegate.swift"),
+      path.join(MACOS_TEMPLATE_ROOT, "AppDelegate.swift"),
       appDelegate,
     );
 

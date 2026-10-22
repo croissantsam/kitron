@@ -27,6 +27,8 @@ export const RUST_WORKSPACE = path.join(SDK_ROOT, "runtime", "rust");
 export const POD_TEMPLATE_ROOT = path.join(SDK_ROOT, "runtime", "macos", "pod");
 export const NODE_HOST_TEMPLATE = path.join(SDK_ROOT, "runtime", "node", "host.mjs");
 export const APP_TEMPLATE_ROOT = path.join(SDK_ROOT, "templates", "app");
+/** The Kitron AppDelegate — substituted into the generated Xcode project. */
+export const MACOS_TEMPLATE_ROOT = path.join(SDK_ROOT, "templates", "macos");
 
 export type Logger = {
   info: (message: string) => void;
