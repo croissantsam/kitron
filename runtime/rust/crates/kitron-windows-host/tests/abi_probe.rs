@@ -44,7 +44,7 @@ fn envelope(raw: *mut c_char, what: &str) -> serde_json::Value {
     let json = unsafe { CStr::from_ptr(raw) }
         .to_string_lossy()
         .into_owned();
-    kitron_windows::kitron_free_string(raw);
+    unsafe { kitron_windows::kitron_free_string(raw) };
     assert!(json.starts_with("{\"ok\":true"), "{what} answered failure: {json}");
     serde_json::from_str(&json)
         .unwrap_or_else(|error| panic!("{what}: probe envelopes are JSON ({error})"))
@@ -63,7 +63,7 @@ fn envelope_typed(raw: *mut c_char, what: &str) -> String {
     let json = unsafe { CStr::from_ptr(raw) }
         .to_string_lossy()
         .into_owned();
-    kitron_windows::kitron_free_string(raw);
+    unsafe { kitron_windows::kitron_free_string(raw) };
     assert!(json.starts_with("{\"ok\":false"), "{what}: expected failure: {json}");
     json
 }
