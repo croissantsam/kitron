@@ -1,0 +1,43 @@
+name: Windows shell check
+#
+# The Windows shell crate (`kitron-windows`) is developed against the Win32
+# API without a Windows machine on hand — this workflow is its compile-and-
+# test gate, mirroring what `cargo check --target x86_64-pc-windows-msvc`
+# covers locally (docs/shell-contracts.md §6).
+#
+# Targeted `-p` groups avoid building `kitron-macos` (AppKit + block2 do not
+# resolve on Windows).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'runtime/rust/**'
+      - '.github/workflows/windows-check.yml'
+  pull_request:
+    paths:
+      - 'runtime/rust/**'
+      - '.github/workflows/windows-check.yml'
+  workflow_dispatch:
+
+jobs:
+  windows-shell:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: runtime/rust
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Check the Windows shell crate
+        run: cargo check -p kitron-windows
+
+      - name: Test portable crates on Windows
+        run: cargo test -p kitron-core -p kitron-protocol -p kitron-node-supervisor -p kitron-backend -p kitron-windows
+
+      - name: Clippy on the shell crate
+        run: cargo clippy -p kitron-windows -- -D warnings

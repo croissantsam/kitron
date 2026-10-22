@@ -1,0 +1,37 @@
+[package]
+name = "kitron-windows"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Kitron shell for Windows: Win32 windows, menus, dialogs, clipboard (spec §40)"
+
+[lib]
+name = "kitron_windows"
+# Linked exactly like the macOS twin: one staticlib per app.
+crate-type = ["staticlib", "rlib"]
+
+[dependencies]
+kitron-core.workspace = true
+kitron-protocol.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+# Win32 — only compiled on Windows (see the cfg gate in lib.rs), so the
+# portable workspace keeps building for macOS development.
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = [
+  "Win32_Foundation",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_UI_HiDpi",
+  "Win32_UI_Shell",
+  "Win32_UI_Shell_Common",
+  "Win32_UI_Controls_Dialogs",
+  "Win32_Graphics_Gdi",
+  "Win32_System_LibraryLoader",
+  "Win32_System_Com",
+  "Win32_System_DataExchange",
+  "Win32_System_Memory",
+  "Win32_System_Ole",
+  "Win32_UI_Input_KeyboardAndMouse",
+] }
