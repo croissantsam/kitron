@@ -5,7 +5,6 @@
 //! Non-Windows targets here are a no-op (the host is `#[cfg(windows)]`).
 
 use std::env;
-use std::path::PathBuf;
 
 fn main() {
     if !env::var("CARGO_CFG_WINDOWS").is_ok() {
@@ -23,22 +22,11 @@ fn main() {
         .warnings(true);
     build.compile("kitron_host_main");
 
-    // 2. Link the kitron-windows staticlib produced for this exact profile.
-    //    OUT_DIR = <target>/<triple>/<profile>/build/kitron-windows-host-*/out
-    //    → three levels up lands in <target>/<triple>/<profile>.
-    //    (On plain `cargo build` without --target that is just target/debug.)
-    let profile_dir = PathBuf::from(env::var("OUT_DIR").unwrap())
-        .ancestors()
-        .nth(3)
-        .unwrap()
-        .to_path_buf();
-    println!("cargo:rustc-link-search=native={}", profile_dir.display());
-    println!("cargo:rustc-link-lib=static=kitron_windows");
-
-    // The Windows SDK import libs the shell surfaces touch (user32 comes in
-    // through the `windows` crate's link annotations; these complete the set).
-    println!("cargo:rustc-link-lib=user32");
-    println!("cargo:rustc-link-lib=gdi32");
-    println!("cargo:rustc-link-lib=shell32");
-    println!("cargo:rustc-link-lib=ole32");
+    // Linking_model: the shell comes through the normal dependency rlibs
+    // (`kitron-windows` → `kitron-core` → …) — the linker pulls each needed
+    // object from the archives because the C++ entry references the C ABI
+    // symbols directly (kitron_bootstrap & co). No manual `.lib` handoff:
+    // a cargo dependency does not produce its `staticlib` artifact, only
+    // its rlib, and pointing the linker at a non-existing artifact is
+    // exactly LNK1181.
 }
