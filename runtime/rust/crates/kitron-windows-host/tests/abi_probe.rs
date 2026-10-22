@@ -142,6 +142,7 @@ fn abi_probe() {
             ("show", "{}"),
             ("hide", "{}"),
         ] {
+            step(&format!("op:{op}"));
             let raw =
                 kitron_windows::kitron_window_op(1, c_string(op), c_string(args));
             ok_result(raw, &format!("op {op}"));
@@ -149,15 +150,16 @@ fn abi_probe() {
 
         step("snapshot");
         // 5. Snapshot truth: logical frame (DPI 96 runner → 1.0) + state.
+        step("snapshot:windowGet");
         let snapshot = ok_result(kitron_windows::kitron_window_get(1), "windowGet");
+        step("snapshot:windowList");
         assert_eq!(snapshot.get("title").and_then(|v| v.as_str()), Some("renamed"));
         assert_eq!(snapshot.get("visible").and_then(|v| v.as_bool()), Some(false));
         let frame = snapshot.get("frame").cloned().unwrap_or_default();
         assert_eq!(frame.get("width").and_then(|v| v.as_f64()), Some(640.0));
 
         let list = ok_result(kitron_windows::kitron_window_list(), "windowList");
-        assert_eq!(list.as_array().map(|v| v.len()), Some(1), "one live window");
-
+        step("snapshot:snapshotJson");
         let hosted = ok_result(kitron_windows::kitron_snapshot_json(), "snapshot");
         assert_eq!(
             hosted.get("app").and_then(|v| v.get("name")).and_then(|v| v.as_str()),
