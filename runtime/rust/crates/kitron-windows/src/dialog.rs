@@ -87,21 +87,22 @@ fn icon_style(name: Option<&str>) -> MESSAGEBOX_STYLE {
 /// The clicked-button index → the contract mapping, per the button set
 /// MessageBox picked for the label count.
 fn clicked_index(response: i32, count: usize) -> usize {
-    let ok = windows::Win32::UI::WindowsAndMessaging::IDOK.0;
-    let cancel = windows::Win32::UI::WindowsAndMessaging::IDCANCEL.0;
-    let yes = windows::Win32::UI::WindowsAndMessaging::IDYES.0;
-    let no = windows::Win32::UI::WindowsAndMessaging::IDNO.0;
-    if response == ok {
-        0
-    } else if count == 3 && response == yes {
-        0
-    } else if count == 3 && response == no {
-        1
-    } else if response == cancel {
-        count - 1 // OKCANCEL: 1 · YESNOCANCEL: 2
-    } else {
-        0
+    use windows::Win32::UI::WindowsAndMessaging::{IDCANCEL, IDNO, IDOK, IDYES};
+    // OK and YES lead (index 0); NO is second in YESNOCANCEL; CANCEL sits
+    // last in both the two- and three-button sets.
+    if response == IDOK.0 {
+        return 0;
     }
+    if count == 3 && response == IDYES.0 {
+        return 0;
+    }
+    if count == 3 && response == IDNO.0 {
+        return 1;
+    }
+    if response == IDCANCEL.0 {
+        return count - 1;
+    }
+    0
 }
 
 /// `dialog.message` — app-modal by default, owned by `windowId` when given.

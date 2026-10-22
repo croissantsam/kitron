@@ -383,6 +383,7 @@ fn exit_signal(status: &std::process::ExitStatus) -> Option<i32> {
     }
     #[cfg(not(unix))]
     {
+        let _ = status; // exit codes suffice on Windows
         None
     }
 }

@@ -203,9 +203,9 @@ fn parse_accelerator(spec: &str, command: u32) -> Option<ACCEL> {
     for part in spec.split('+') {
         let lowered = part.to_ascii_lowercase();
         match lowered.as_str() {
-            "cmdorctrl" | "cmd" | "ctrl" | "control" => mods = mods | FCONTROL,
-            "alt" | "option" => mods = mods | FALT,
-            "shift" => mods = mods | FSHIFT,
+            "cmdorctrl" | "cmd" | "ctrl" | "control" => mods |= FCONTROL,
+            "alt" | "option" => mods |= FALT,
+            "shift" => mods |= FSHIFT,
             other => key_part = Some(other.to_ascii_uppercase()),
         }
     }

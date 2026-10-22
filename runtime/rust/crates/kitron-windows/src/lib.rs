@@ -270,7 +270,7 @@ pub unsafe extern "C" fn kitron_node_invoke_wait(
     payload: *const c_char,
     timeout_ms: u32,
 ) -> *mut c_char {
-    match crate::services::node_invoke(method, payload, timeout_ms) {
+    match unsafe { crate::services::node_invoke(method, payload, timeout_ms) } {
         Ok(result) => json_to_c_string(status_ok(result)),
         Err(e) => json_to_c_string(status_err(&e)),
     }

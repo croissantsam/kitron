@@ -44,8 +44,12 @@ pub fn node_control(mode: &str) -> Result<serde_json::Value, KitronError> {
     }
 }
 
-/// Blocking invoke into the backend (bridge worker threads).
-pub fn node_invoke(
+/// Blocking invoke into the backend (bridge worker threads only).
+///
+/// # Safety
+///
+/// String arguments must be null or valid NUL-terminated C strings.
+pub unsafe fn node_invoke(
     method: *const c_char,
     payload: *const c_char,
     timeout_ms: u32,
