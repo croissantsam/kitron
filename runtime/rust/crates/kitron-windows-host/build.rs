@@ -1,8 +1,18 @@
-//! Windows host build: compiles the C++ entry (`host_main.cpp`) and links the
-//! `kitron-windows` staticlib into the final executable alongside the C++
-//! object — the same trick the macOS twin uses for its Rust + ObjC++ shell.
+//! Windows host build: compiles the C++ entry (`host_main.cpp`) and hands the
+//! linker what the Rust dependency chain cannot produce on its own:
 //!
-//! Non-Windows targets here are a no-op (the host is `#[cfg(windows)]`).
+//! - the C++ object itself (into a small static archive inside OUT_DIR),
+//! - the user32 import library — the `windows` crate links its Win32 surface
+//!   with raw-dylib, which only synthesizes import records for symbols
+//!   referenced by *Rust* code; the host's C++ entry calls user32 directly
+//!   (GetMessageW / SetTimer / TranslateAcceleratorW…), so the import lib
+//!   must be on the link line explicitly.
+//!
+//! The shell's own `kitron_*` symbols resolve through the normal rlib
+//! dependency chain — kept alive by the `#[used]` anchor in `src/main.rs`
+//! (rustc drops dependency archives no Rust unit references).
+//!
+//! Non-Windows targets are a no-op (the host is `cfg(windows)`).
 
 use std::env;
 
@@ -11,7 +21,6 @@ fn main() {
         return;
     }
 
-    // 1. Compile the C++ entry with the Win32 SDK headers that MSVC provides.
     let mut build = cc::Build::new();
     build
         .file("src/host_main.cpp")
@@ -22,11 +31,8 @@ fn main() {
         .warnings(true);
     build.compile("kitron_host_main");
 
-    // Linking_model: the shell comes through the normal dependency rlibs
-    // (`kitron-windows` → `kitron-core` → …) — the linker pulls each needed
-    // object from the archives because the C++ entry references the C ABI
-    // symbols directly (kitron_bootstrap & co). No manual `.lib` handoff:
-    // a cargo dependency does not produce its `staticlib` artifact, only
-    // its rlib, and pointing the linker at a non-existing artifact is
-    // exactly LNK1181.
+    // MSVC's default link set does not include user32 — the host's own Win32
+    // calls need it (the shell adds its Win32 needs through raw-dylib, which
+    // needs no import libraries).
+    println!("cargo:rustc-link-lib=user32");
 }
