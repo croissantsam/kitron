@@ -14,6 +14,7 @@
 #![cfg(windows)]
 
 use std::ffi::{c_char, CStr, CString};
+use std::sync::Mutex;
 
 const CONFIG: &str = concat!(
     r#"{"app":{"name":"probe","identifier":"dev.kitron.probe","version":"0.1.0"},"#,
