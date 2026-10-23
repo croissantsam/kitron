@@ -151,11 +151,12 @@ fn abi_probe() {
         step("snapshot");
         // 5. Snapshot truth: logical frame (DPI 96 runner → 1.0) + state.
         // The reads `snapshot_for` performs, one by one, to isolate a hang.
-        use windows::Win32::Foundation::RECT;
+        use windows::Win32::Foundation::{HWND, RECT};
         use windows::Win32::UI::WindowsAndMessaging::{
             GetForegroundWindow, GetWindowRect, GetWindowTextLengthW, GetWindowTextW,
             IsIconic, IsWindowVisible, IsZoomed,
         };
+        let hwnd = HWND(window_ptr as *mut core::ffi::c_void);
         step("diag:rect");
         let mut rect = RECT::default();
         let _ = GetWindowRect(hwnd, &mut rect);
