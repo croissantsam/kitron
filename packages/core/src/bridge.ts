@@ -37,8 +37,8 @@ export interface KitronNativeModule {
   appQuit(): Promise<string>;
   appCancelTermination(): Promise<string>;
   windowCreate(argsJSON: string): Promise<string>;
-  windowGet(id: number): Promise<string>;
-  windowOp(id: number, op: string, argsJSON: string): Promise<string>;
+  windowGet(windowId: number): Promise<string>;
+  windowOp(windowId: number, op: string, argsJSON: string): Promise<string>;
   eventsDrain(): Promise<string>;
   /** Resolves with the next runtime event (push delivery — no polling). */
   nextEvent(): Promise<string>;

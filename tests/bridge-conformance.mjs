@@ -81,6 +81,72 @@ function headerFns() {
   return new Set([...source.matchAll(/\b(kitron_[a-z0-9_]+)\s*\(/g)].map((m) => m[1]));
 }
 
+/**
+ * Native arg-type signatures, method by method: the data params of every
+ * `RCT_EXPORT_METHOD` (promise resolve/reject callbacks dropped — they are the
+ * call mechanism, not data).
+ */
+function nativeSignatures() {
+  const source = read(MM);
+  const signatures = {};
+  const re = /RCT_EXPORT_METHOD\((\w+):([\s\S]*?)\)\s*\{/g;
+  for (const match of source.matchAll(re)) {
+    const params = [];
+    for (const param of match[2].matchAll(/\(([^)]+)\)\s*(\w+)/g)) {
+      const type = param[1].trim();
+      if (/Promise(Resolve|Reject)/.test(type)) {
+        continue;
+      }
+      params.push({ type, name: param[2] });
+    }
+    signatures[match[1]] = params;
+  }
+  return signatures;
+}
+
+/** TypeScript interface param lists, method by method (same shape). */
+function typeScriptSignatures() {
+  const source = read(BRIDGE_TS);
+  const start = source.indexOf("export interface KitronNativeModule");
+  const end = source.indexOf("\n}", start);
+  const body = source.slice(start, end);
+  const signatures = {};
+  for (const match of body.matchAll(/\n  (\w+)\(([^)]*)\):/g)) {
+    const params = match[2]
+      .split(",")
+      .map((raw) => raw.trim())
+      .filter(Boolean)
+      .map((raw) => {
+        const parsed = raw.match(/^(\w+)\s*:\s*(.+)$/);
+        return parsed ? { name: parsed[1], type: parsed[2].trim() } : null;
+      })
+      .filter(Boolean);
+    signatures[match[1]] = params;
+  }
+  return signatures;
+}
+
+/** `NSString *` → string, `NSNumber *` → number, `BOOL` → boolean. */
+function classifyNativeType(type) {
+  if (/NSNumber/.test(type)) {
+    return "number";
+  }
+  if (/BOOL/.test(type)) {
+    return "boolean";
+  }
+  if (/NSString/.test(type)) {
+    return "string";
+  }
+  return "unknown";
+}
+
+function classifyTypeScriptType(type) {
+  if (type === "string" || type === "number" || type === "boolean") {
+    return type;
+  }
+  return "unknown";
+}
+
 let failures = [];
 const report = (label, condition, detail) => {
   if (!condition) {
@@ -115,6 +181,54 @@ try {
     }
   }
 
+  // Arg-type signatures, param by param (spec §10: data crosses the bridge as
+  // primitives + JSON strings — never opaque native objects). Catches the
+  // drift the name-only check cannot: a param added on one side, a type that
+  // stopped lining up, a param renamed only in one language.
+  const nativeSignaturesMap = nativeSignatures();
+  const typeScriptSignaturesMap = typeScriptSignatures();
+  for (const name of native) {
+    const nativeParams = nativeSignaturesMap[name] ?? [];
+    const tsParams = typeScriptSignaturesMap[name];
+    if (!tsParams) {
+      report("signatures", false, `${name}: no parameter list in KitronNativeModule`);
+      continue;
+    }
+    if (nativeParams.length !== tsParams.length) {
+      report(
+        "signatures",
+        false,
+        `${name}: ${nativeParams.length} native data params vs ${tsParams.length} TS params`,
+      );
+      continue;
+    }
+    for (let index = 0; index < nativeParams.length; index += 1) {
+      const nativeParam = nativeParams[index];
+      const tsParam = tsParams[index];
+      const nativeKind = classifyNativeType(nativeParam.type);
+      const tsKind = classifyTypeScriptType(tsParam.type);
+      if (nativeKind !== tsKind) {
+        report(
+          "signatures",
+          false,
+          `${name} #${index + 1}: native \`(${nativeParam.type})${nativeParam.name}\` vs TS \`${tsParam.name}: ${tsParam.type}\` — ${nativeKind} ≠ ${tsKind}`,
+        );
+      }
+      if (nativeParam.name !== tsParam.name) {
+        report(
+          "signatures",
+          false,
+          `${name} #${index + 1}: native param \`${nativeParam.name}\` vs TS param \`${tsParam.name}\``,
+        );
+      }
+    }
+  }
+  for (const name of ts) {
+    if (nativeSignaturesMap[name] === undefined) {
+      report("signatures", false, `${name}: TS-only — no RCT_EXPORT_METHOD in KitronBridge.mm`);
+    }
+  }
+
   // Sanity: the JSI getter surface is also part of the module type contract.
 
   if (failures.length > 0) {
@@ -125,6 +239,9 @@ try {
   console.log(
     `  bridge: PASS (${native.size} native methods, ${ts.size} TS methods, ` +
       `${rust.names.length} C ABI fns, all aligned)`,
+  );
+  console.log(
+    `  signatures: PASS (${Object.keys(nativeSignaturesMap).length} methods audited arg-type & name, param by param)`,
   );
 } catch (error) {
   console.error("bridge conformance could not run:", error.message);
