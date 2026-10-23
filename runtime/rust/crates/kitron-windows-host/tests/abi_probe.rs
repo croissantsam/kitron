@@ -150,7 +150,25 @@ fn abi_probe() {
 
         step("snapshot");
         // 5. Snapshot truth: logical frame (DPI 96 runner → 1.0) + state.
-        step("snapshot:windowGet");
+        // The reads `snapshot_for` performs, one by one, to isolate a hang.
+        use windows::Win32::Foundation::RECT;
+        use windows::Win32::UI::WindowsAndMessaging::{
+            GetForegroundWindow, GetWindowRect, GetWindowTextLengthW, GetWindowTextW,
+            IsIconic, IsWindowVisible, IsZoomed,
+        };
+        step("diag:rect");
+        let mut rect = RECT::default();
+        let _ = GetWindowRect(hwnd, &mut rect);
+        step("diag:textlen");
+        let length = GetWindowTextLengthW(hwnd);
+        step("diag:textlen-resolved");
+        let mut buffer = vec![0u16; length as usize + 1];
+        GetWindowTextW(hwnd, &mut buffer);
+        step("diag:text");
+        let _ = GetForegroundWindow();
+        step("diag:states");
+        let _ = (IsIconic(hwnd).as_bool(), IsZoomed(hwnd).as_bool(), IsWindowVisible(hwnd).as_bool());
+        step("diag:done → window_get");
         let snapshot = ok_result(kitron_windows::kitron_window_get(1), "windowGet");
         step("snapshot:windowList");
         assert_eq!(snapshot.get("title").and_then(|v| v.as_str()), Some("renamed"));
