@@ -2,9 +2,8 @@
  * Kitron SDK entry (spec §9): `import { app, window, backend } from "kitron"`.
  *
  * Phase-1 namespaces are real (`app`, `window`, `backend`/`node`, `logger`),
- * plus the first phase-2 batch (`clipboard`, `dialog`, `shell`). The rest of
- * the spec'd surface ships as typed stubs that fail with `KITRON_PHASE2` —
- * honest signals inside the MVP gate (spec §41).
+ * plus the full phase-2 batch (`clipboard`, `dialog`, `shell`, `menu`, `tray`,
+ * `notification`, `process`, `shortcut`, `updater`) backed by native code.
  */
 
 export { app } from "@kitron/core";
