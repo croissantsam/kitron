@@ -198,6 +198,16 @@ used by the app's `AppDelegate.swift`:
 5. `startReactNativeWithModuleName:inWindow:` — React Native renders into the
    Rust-owned window.
 
+**Shell language decision (2026-10-23).** An earlier roadmap planned to
+rewrite this pod in Swift as the last work item. That rewrite is **cancelled**:
+the ObjC++ pod is green in CI, exercised end-to-end (`tests/run.sh`, macOS
+e2e), and the Swift-importable surface (`KitronBridge.h` free of C++ headers)
+already keeps Swift app targets first-class. A rewrite would be churn with no
+user-visible gain — shell language stays an internal implementation detail
+(the framework's own choice; apps neither see it nor write it), so the
+macOS/ObjC++ pairing stays for good. Same principle on Windows: the shell is
+Rust + a thin C++ entry, never app-facing (see `templates/windows/`).
+
 ---
 
 ## 6. Lifecycle
