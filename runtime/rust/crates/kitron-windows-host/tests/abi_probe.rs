@@ -57,15 +57,22 @@ fn ok_result(raw: *mut c_char, what: &str) -> serde_json::Value {
         .unwrap_or(serde_json::json!({}))
 }
 
-/// Parses only to pull the error message out of a failure envelope.
+/// Parses a failure envelope and returns its typed error code — robust to
+/// serde's key ordering (errors serialize as {"error":…,"ok":false}).
 fn envelope_typed(raw: *mut c_char, what: &str) -> String {
     assert!(!raw.is_null(), "{what}: null envelope");
     let json = unsafe { CStr::from_ptr(raw) }
         .to_string_lossy()
         .into_owned();
     unsafe { kitron_windows::kitron_free_string(raw) };
-    assert!(json.starts_with("{\"ok\":false"), "{what}: expected failure: {json}");
-    json
+    let value: serde_json::Value = serde_json::from_str(&json)
+        .unwrap_or_else(|error| panic!("{what}: envelope is not JSON ({error}): {json}"));
+    assert!(value.get("error").is_some(), "{what}: expected a failure envelope: {json}");
+    value
+        .pointer("/error/code")
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string()
 }
 
 fn event(name: &str) -> bool {
@@ -290,19 +297,19 @@ fn abi_probe() {
 
         step("typedErrors");
         // 8. Typed-error paths (never modal): >3 buttons and an unknown id.
-        assert!(
+        assert_eq!(
             envelope_typed(
                 kitron_windows::kitron_dialog_message(c_string(
                     r#"{"message":"x","buttons":["a","b","c","d"]}"#
                 )),
-                "fourButtons"
-            )
-            .contains("DIALOG_BUTTONS_UNSUPPORTED"),
+                "fourButtons",
+            ),
+            "DIALOG_BUTTONS_UNSUPPORTED",
             "four buttons refuse with the typed code"
         );
-        assert!(
-            envelope_typed(kitron_windows::kitron_window_get(99), "unknownWindow")
-                .contains("WINDOW_NOT_FOUND"),
+        assert_eq!(
+            envelope_typed(kitron_windows::kitron_window_get(99), "unknownWindow"),
+            "WINDOW_NOT_FOUND",
             "an unknown window id answers WINDOW_NOT_FOUND"
         );
 
