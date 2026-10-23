@@ -16,6 +16,7 @@
     "kitron": "node cli/src/kitron.ts",
     "typecheck": "tsc --noEmit",
     "test": "bash tests/run.sh",
+    "bench": "node bench/run.mjs",
     "doctor": "node cli/src/kitron.ts doctor",
     "build:rust": "cargo build --release -p kitron-macos --manifest-path runtime/rust/Cargo.toml",
     "test:rust": "cargo test --manifest-path runtime/rust/Cargo.toml"

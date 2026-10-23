@@ -1,0 +1,35 @@
+{
+  "machine": {
+    "os": "darwin arm64",
+    "cpus": "Apple M4",
+    "totalMemMiB": 16384
+  },
+  "runs": 5,
+  "electronVersion": "35.7.5",
+  "kitron": {
+    "appPath": "/tmp/kitron-bench/kitron-app/macos/build/derived/Build/Products/Release/KitronBench.app",
+    "startupReadyMsMedian": 160,
+    "startupAllMs": [
+      246,
+      161,
+      160,
+      158,
+      159
+    ],
+    "idleRssMiB": 183.9,
+    "appKiB": 476536
+  },
+  "electron": {
+    "startupReadyMsMedian": 268,
+    "startupAllMs": [
+      261,
+      262,
+      271,
+      268,
+      269
+    ],
+    "idleRssMiB": 400.2,
+    "frameworkKiB": 250744,
+    "paintFallback": false
+  }
+}

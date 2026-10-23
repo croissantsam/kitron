@@ -1,0 +1,63 @@
+name: benchmark
+
+# Kitron vs Electron (bench/run.mjs): real packaged numbers, measured on a
+# macOS runner — shipped .app bytes, cold start to interactive content, idle
+# RSS of the whole process tree. Monthly + manual: keeps macOS runner minutes
+# low while keeping the claims fresh (they go stale as Electron ships).
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 9 1 * *"
+
+jobs:
+  bench:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Toolchain (pnpm for `kitron create`, CocoaPods for the pod)
+        run: npm install -g pnpm
+      - name: Electron fixture
+        run: npm ci --no-audit --no-fund
+        working-directory: bench/electron-app
+      - name: Bench
+        run: node bench/run.mjs --runs=5
+      - name: Report
+        if: always()
+        run: |
+          python3 - <<'PY'
+          import json, os, pathlib
+          results = pathlib.Path("bench/results.json")
+          if not results.exists():
+              raise SystemExit("bench produced no results.json")
+          r = json.loads(results.read_text())
+          md = [
+              f"### Kitron vs Electron (median of {r.get('runs', '?')} runs, "
+              f"Electron {r.get('electronVersion', '?')})", "",
+              "| App | Cold start → ready (ms) | Idle, whole tree (MiB) | Shipped (MB) |",
+              "|---|---|---|---|",
+          ]
+          for name in ("kitron", "electron"):
+              side = r.get(name, {})
+              if side.get("error"):
+                  md.append(f"| **{name}** | error: {side['error']} | — | — |")
+                  continue
+              size = side.get("appKiB", side.get("frameworkKiB", -1))
+              md.append(
+                  f"| **{name}** | {side['startupReadyMsMedian']} | {side['idleRssMiB']} "
+                  f"| ~{size // 1024} |"
+              )
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              pathlib.Path(summary).write_text("\n".join(md) + "\n")
+          else:
+              print("\n".join(md))
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-results
+          path: bench/results.json
