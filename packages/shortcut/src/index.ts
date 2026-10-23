@@ -1,26 +1,53 @@
 /**
- * Kitron global shortcuts (phase 2).
+ * `@kitron/shortcut` — global keyboard shortcuts (spec §42).
  *
- * Part of the Kitron SDK package layout (spec §24). The namespace is reserved
- * by the runtime but its native implementation lands after the MVP gate
- * (spec §41) — calling it throws a typed `KITRON_PHASE2` error so apps can
- * feature-detect instead of branching on versions.
+ * macOS uses Carbon `RegisterEventHotKey`. Gated by the `shortcut` permission
+ * (spec §23). Registered shortcuts fire even when the app is in the
+ * background; the handler is invoked with the accelerator string.
  */
 
-import { KitronError } from "@kitron/core";
+import {
+  KitronError,
+  getNativeModule,
+  events,
+} from "@kitron/core";
 
-function phase2(feature: string): never {
-  throw new KitronError({
-    code: "KITRON_PHASE2",
-    message:
-      `${feature} ships after the MVP gate (spec §41). ` +
-      "Track progress on the Kitron roadmap; feature-detect with try/catch.",
+function requireNative() {
+  const native = getNativeModule();
+  if (!native) {
+    throw new KitronError({
+      code: "KITRON_UNAVAILABLE",
+      message: "shortcut APIs require the Kitron native runtime",
+    });
+  }
+  return native;
+}
+
+const handlers = new Map<string, Set<() => void>>();
+
+let wired = false;
+function wire() {
+  if (wired) return;
+  wired = true;
+  events.on("shortcut.triggered", (payload: { accelerator: string }) => {
+    const set = handlers.get(payload?.accelerator);
+    if (set) for (const h of set) h();
   });
 }
 
 export const shortcut = {
-  /** Registers a global hotkey (native registration). */
-  register: (_accelerator: string, _handler: () => void): void => phase2("shortcut.register"),
-  /** Removes a previously registered hotkey. */
-  unregister: (_accelerator: string): void => phase2("shortcut.unregister"),
+  /** Registers a global shortcut. */
+  async register(accelerator: string, handler: () => void): Promise<void> {
+    requireNative();
+    wire();
+    if (!handlers.has(accelerator)) handlers.set(accelerator, new Set());
+    handlers.get(accelerator)!.add(handler);
+    await requireNative().shortcutRegister(accelerator);
+  },
+
+  /** Unregisters a global shortcut. */
+  async unregister(accelerator: string): Promise<void> {
+    handlers.delete(accelerator);
+    await requireNative().shortcutUnregister(accelerator);
+  },
 };

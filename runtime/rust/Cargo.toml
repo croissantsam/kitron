@@ -38,6 +38,10 @@ objc2-app-kit = { version = "0.3", default-features = false, features = [
   "NSGraphics",
   "NSRunningApplication",
   "NSWorkspace",
+  "NSStatusBar",
+  "NSStatusBarButton",
+  "NSStatusItem",
+  "objc2-core-foundation",
   "block2",
   "objc2-uniform-type-identifiers",
 ] }
@@ -58,6 +62,9 @@ objc2-foundation = { version = "0.3", default-features = false, features = [
 # family used by objc2-app-kit 0.3 (0.2 would pull a second objc2 into the
 # graph and the types would not line up).
 objc2-uniform-type-identifiers = { version = "0.3", default-features = false }
+
+# Phase 2: notifications via the UserNotifications framework.
+objc2-user-notifications = { version = "0.3", features = ["default"] }
 
 kitron-protocol = { version = "0.1.0", path = "crates/kitron-protocol" }
 kitron-core = { version = "0.1.0", path = "crates/kitron-core" }

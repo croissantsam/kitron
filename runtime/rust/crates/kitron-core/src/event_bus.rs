@@ -27,6 +27,7 @@ pub enum EventName {
     NodeExited,
     NodeEvent,
     MenuAction,
+    ShortcutTriggered,
 }
 
 impl EventName {
@@ -52,6 +53,7 @@ impl EventName {
             "node.exited" => Self::NodeExited,
             "backend.event" => Self::NodeEvent,
             "menu.action" => Self::MenuAction,
+            "shortcut.triggered" => Self::ShortcutTriggered,
             _ => return None,
         })
     }
@@ -77,6 +79,7 @@ impl EventName {
             Self::NodeExited => "node.exited",
             Self::NodeEvent => "backend.event",
             Self::MenuAction => "menu.action",
+            Self::ShortcutTriggered => "shortcut.triggered",
         }
     }
 }

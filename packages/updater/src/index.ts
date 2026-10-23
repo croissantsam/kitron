@@ -1,26 +1,43 @@
 /**
- * Kitron auto-update (phase 4).
+ * `@kitron/updater` — check for and download updates (spec §42).
  *
- * Part of the Kitron SDK package layout (spec §24). The namespace is reserved
- * by the runtime but its native implementation lands after the MVP gate
- * (spec §41) — calling it throws a typed `KITRON_PHASE2` error so apps can
- * feature-detect instead of branching on versions.
+ * macOS checks a remote version endpoint and opens the release page in the
+ * browser. Gated by the `updater` permission (spec §23).
  */
 
-import { KitronError } from "@kitron/core";
+import {
+  KitronError,
+  getNativeModule,
+  parseEnvelope,
+} from "@kitron/core";
 
-function phase2(feature: string): never {
-  throw new KitronError({
-    code: "KITRON_PHASE2",
-    message:
-      `${feature} ships after the MVP gate (spec §41). ` +
-      "Track progress on the Kitron roadmap; feature-detect with try/catch.",
-  });
+function requireNative() {
+  const native = getNativeModule();
+  if (!native) {
+    throw new KitronError({
+      code: "KITRON_UNAVAILABLE",
+      message: "updater APIs require the Kitron native runtime",
+    });
+  }
+  return native;
+}
+
+export interface UpdateInfo {
+  current: string;
+  latest: string;
+  updateAvailable: boolean;
 }
 
 export const updater = {
-  /** Checks whether an update is available. */
-  check: (): void => phase2("updater.check"),
-  /** Downloads and applies an update. */
-  download: (): void => phase2("updater.download"),
+  /** Checks whether a newer version is available. */
+  async check(url: string): Promise<UpdateInfo> {
+    return parseEnvelope(
+      await requireNative().updaterCheck(JSON.stringify({ url })),
+    ) as UpdateInfo;
+  },
+
+  /** Opens the release page for download. */
+  async download(url: string): Promise<void> {
+    await requireNative().updaterDownload(JSON.stringify({ url }));
+  },
 };

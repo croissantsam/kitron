@@ -47,7 +47,11 @@ menus, lifecycle, IPC supervision) is written in Rust.
 | `shell`            | `NSWorkspace`                                 | ✅ |
 | `menu`             | `NSMenu` (declarative, actions back to JS)    | ✅ |
 | `app.activate` / `app.quit` | `NSApplication` lifecycle               | ✅ |
-| `tray` / `notification` / `process` / `shortcut` / `updater` | — | 🚧 typed `KITRON_PHASE2` stubs |
+| `tray` | `NSStatusBar` | ✅ |
+| `notification` | `UNUserNotificationCenter` | ✅ |
+| `process` | std (env + spawn) | ✅ |
+| `shortcut` | Carbon `RegisterEventHotKey` | ✅ |
+| `updater` | version endpoint + browser | ✅ |
 
 ### Permissions (§23)
 

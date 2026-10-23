@@ -1,26 +1,53 @@
 /**
- * Kitron native process helpers (phase 2).
+ * `@kitron/process` — environment + child process spawning (spec §42).
  *
- * Part of the Kitron SDK package layout (spec §24). The namespace is reserved
- * by the runtime but its native implementation lands after the MVP gate
- * (spec §41) — calling it throws a typed `KITRON_PHASE2` error so apps can
- * feature-detect instead of branching on versions.
+ * Pure Rust (no AppKit) on macOS. Gated by the `process` permission (spec §23).
  */
 
-import { KitronError } from "@kitron/core";
+import {
+  KitronError,
+  getNativeModule,
+  parseEnvelope,
+} from "@kitron/core";
 
-function phase2(feature: string): never {
-  throw new KitronError({
-    code: "KITRON_PHASE2",
-    message:
-      `${feature} ships after the MVP gate (spec §41). ` +
-      "Track progress on the Kitron roadmap; feature-detect with try/catch.",
-  });
+function requireNative() {
+  const native = getNativeModule();
+  if (!native) {
+    throw new KitronError({
+      code: "KITRON_UNAVAILABLE",
+      message: "process APIs require the Kitron native runtime",
+    });
+  }
+  return native;
+}
+
+export interface SpawnOptions {
+  command: string;
+  args?: string[];
+  cwd?: string;
+  env?: Record<string, string>;
+}
+
+export interface SpawnResult {
+  status: number | null;
+  stdout: string;
+  stderr: string;
+  success: boolean;
 }
 
 export const process = {
-  /** Reads an environment variable of the app process. */
-  env: (_name: string): string | undefined => phase2("process.env"),
-  /** Spawns a child process through the native layer. */
-  spawn: (_options: unknown): void => phase2("process.spawn"),
+  /** Reads an environment variable (undefined when unset). */
+  async env(name: string): Promise<string | undefined> {
+    const result = parseEnvelope(
+      await requireNative().processEnv(name),
+    ) as { value: string | null };
+    return result.value ?? undefined;
+  },
+
+  /** Spawns a child process and awaits its completion. */
+  async spawn(options: SpawnOptions): Promise<SpawnResult> {
+    return parseEnvelope(
+      await requireNative().processSpawn(JSON.stringify(options ?? {})),
+    ) as SpawnResult;
+  },
 };

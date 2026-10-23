@@ -13,7 +13,12 @@
 pub mod clipboard;
 pub mod dialog;
 pub mod menu;
+pub mod notification;
+pub mod process;
 pub mod shell;
+pub mod shortcut;
+pub mod tray;
+pub mod updater;
 pub mod window;
 
 use std::collections::BTreeMap;
@@ -624,6 +629,146 @@ pub unsafe extern "C" fn kitron_dialog_save_file(args: *const c_char) -> *mut c_
         unsafe { CStr::from_ptr(args) }.to_string_lossy().into_owned()
     };
     match dialog::save_file(&raw) {
+        Ok(result) => json_to_c_string(status_ok(result)),
+        Err(e) => json_to_c_string(status_err(&e)),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase-2 native APIs (spec §42): tray, notification, process, shortcut, updater
+// ---------------------------------------------------------------------------
+
+/// Creates a system-tray (status-bar) item. Args JSON: `{"title":..., "tooltip":..., "menu":[...]}`.
+/// Result: `{"id": N}`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_tray_create(args: *const c_char) -> *mut c_char {
+    let raw = if args.is_null() {
+        "{}".to_string()
+    } else {
+        unsafe { CStr::from_ptr(args) }.to_string_lossy().into_owned()
+    };
+    match tray::create(&raw) {
+        Ok(result) => json_to_c_string(status_ok(result)),
+        Err(e) => json_to_c_string(status_err(&e)),
+    }
+}
+
+/// Updates a tray item's title.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_tray_set_title(id: u64, title: *const c_char) -> *mut c_char {
+    let value = if title.is_null() {
+        String::new()
+    } else {
+        unsafe { CStr::from_ptr(title) }.to_string_lossy().into_owned()
+    };
+    match tray::set_title(id, &value) {
+        Ok(()) => json_to_c_string(status_ok(serde_json::json!({ "id": id }))),
+        Err(e) => json_to_c_string(status_err(&e)),
+    }
+}
+
+/// Removes a tray item.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_tray_remove(id: u64) -> *mut c_char {
+    match tray::remove(id) {
+        Ok(()) => json_to_c_string(status_ok(serde_json::json!({ "id": id }))),
+        Err(e) => json_to_c_string(status_err(&e)),
+    }
+}
+
+/// Shows a user notification. Args JSON: `{"title":..., "body":..., "sound":bool}`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_notification_show(args: *const c_char) -> *mut c_char {
+    let raw = if args.is_null() {
+        "{}".to_string()
+    } else {
+        unsafe { CStr::from_ptr(args) }.to_string_lossy().into_owned()
+    };
+    match notification::show(&raw) {
+        Ok(()) => json_to_c_string(status_ok(serde_json::json!({}))),
+        Err(e) => json_to_c_string(status_err(&e)),
+    }
+}
+
+/// Reads an environment variable. Args: the variable name (C string).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_process_env(name: *const c_char) -> *mut c_char {
+    let value = if name.is_null() {
+        String::new()
+    } else {
+        unsafe { CStr::from_ptr(name) }.to_string_lossy().into_owned()
+    };
+    match process::env(&value) {
+        Ok(result) => json_to_c_string(status_ok(serde_json::json!({ "value": result }))),
+        Err(e) => json_to_c_string(status_err(&e)),
+    }
+}
+
+/// Spawns a child process. Args JSON: `{"command":..., "args":[...], "cwd":..., "env":{...}}`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_process_spawn(args: *const c_char) -> *mut c_char {
+    let raw = if args.is_null() {
+        "{}".to_string()
+    } else {
+        unsafe { CStr::from_ptr(args) }.to_string_lossy().into_owned()
+    };
+    match process::spawn(&raw) {
+        Ok(result) => json_to_c_string(status_ok(result)),
+        Err(e) => json_to_c_string(status_err(&e)),
+    }
+}
+
+/// Registers a global shortcut. Args: the accelerator string (C string).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_shortcut_register(accelerator: *const c_char) -> *mut c_char {
+    let value = if accelerator.is_null() {
+        String::new()
+    } else {
+        unsafe { CStr::from_ptr(accelerator) }.to_string_lossy().into_owned()
+    };
+    match shortcut::register(&value) {
+        Ok(()) => json_to_c_string(status_ok(serde_json::json!({}))),
+        Err(e) => json_to_c_string(status_err(&e)),
+    }
+}
+
+/// Unregisters a global shortcut. Args: the accelerator string (C string).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_shortcut_unregister(accelerator: *const c_char) -> *mut c_char {
+    let value = if accelerator.is_null() {
+        String::new()
+    } else {
+        unsafe { CStr::from_ptr(accelerator) }.to_string_lossy().into_owned()
+    };
+    match shortcut::unregister(&value) {
+        Ok(()) => json_to_c_string(status_ok(serde_json::json!({}))),
+        Err(e) => json_to_c_string(status_err(&e)),
+    }
+}
+
+/// Checks for an available update. Args JSON: `{"url": "..."}` (version endpoint).
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_updater_check(args: *const c_char) -> *mut c_char {
+    let raw = if args.is_null() {
+        "{}".to_string()
+    } else {
+        unsafe { CStr::from_ptr(args) }.to_string_lossy().into_owned()
+    };
+    match updater::check(&raw) {
+        Ok(result) => json_to_c_string(status_ok(result)),
+        Err(e) => json_to_c_string(status_err(&e)),
+    }
+}
+
+/// Opens the release page for download. Args JSON: `{"url": "..."}`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_updater_download(args: *const c_char) -> *mut c_char {
+    let raw = if args.is_null() {
+        "{}".to_string()
+    } else {
+        unsafe { CStr::from_ptr(args) }.to_string_lossy().into_owned()
+    };
+    match updater::download(&raw) {
         Ok(result) => json_to_c_string(status_ok(result)),
         Err(e) => json_to_c_string(status_err(&e)),
     }

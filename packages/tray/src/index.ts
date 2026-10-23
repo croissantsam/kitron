@@ -1,24 +1,53 @@
 /**
- * Kitron system tray (phase 2).
+ * `@kitron/tray` — system tray / status-bar items (spec §42).
  *
- * Part of the Kitron SDK package layout (spec §24). The namespace is reserved
- * by the runtime but its native implementation lands after the MVP gate
- * (spec §41) — calling it throws a typed `KITRON_PHASE2` error so apps can
- * feature-detect instead of branching on versions.
+ * macOS uses `NSStatusBar`. Gated by the `tray` permission (spec §23).
  */
 
-import { KitronError } from "@kitron/core";
+import {
+  KitronError,
+  getNativeModule,
+  parseEnvelope,
+} from "@kitron/core";
 
-function phase2(feature: string): never {
-  throw new KitronError({
-    code: "KITRON_PHASE2",
-    message:
-      `${feature} ships after the MVP gate (spec §41). ` +
-      "Track progress on the Kitron roadmap; feature-detect with try/catch.",
-  });
+function requireNative() {
+  const native = getNativeModule();
+  if (!native) {
+    throw new KitronError({
+      code: "KITRON_UNAVAILABLE",
+      message: "tray APIs require the Kitron native runtime",
+    });
+  }
+  return native;
+}
+
+export interface TrayMenuDefinition {
+  label: string;
+  items: { label?: string; type?: "separator"; action?: string; accelerator?: string; enabled?: boolean; checked?: boolean; items?: TrayMenuDefinition["items"] }[];
+}
+
+export interface TrayCreateOptions {
+  title?: string;
+  tooltip?: string;
+  menu?: TrayMenuDefinition[];
 }
 
 export const tray = {
-  /** Creates a tray item (NSStatusItem on macOS). */
-  create: (_options: unknown): void => phase2("tray.create"),
+  /** Creates a status-bar item. Returns its id. */
+  async create(options: TrayCreateOptions = {}): Promise<number> {
+    const result = parseEnvelope(
+      await requireNative().trayCreate(JSON.stringify(options ?? {})),
+    ) as { id: number };
+    return result.id;
+  },
+
+  /** Updates the item's title. */
+  async setTitle(id: number, title: string): Promise<void> {
+    await requireNative().traySetTitle(id, title);
+  },
+
+  /** Removes the item. */
+  async remove(id: number): Promise<void> {
+    await requireNative().trayRemove(id);
+  },
 };

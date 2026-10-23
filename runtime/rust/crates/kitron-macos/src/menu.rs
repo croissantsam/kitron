@@ -159,6 +159,31 @@ pub(crate) fn install_application_menu(app_name: &str) {
 }
 
 /// Builds and installs the application menu described by the app (spec §18).
+/// Builds an `NSMenu` from the same JSON shape used by `set_application_menu`,
+/// without installing it anywhere. Used by the tray module to attach a menu to
+/// a status item.
+pub(crate) fn build_menu(definition_json: &str) -> Result<Retained<NSMenu>, String> {
+    let Some(mtm) = MainThreadMarker::new() else {
+        return Err("menu.build must run on the main thread".to_string());
+    };
+    let definition: Vec<MenuDefinition> =
+        serde_json::from_str(definition_json).map_err(|error| error.to_string())?;
+    let target = menu_target();
+    let menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &NSString::from_str("TrayMenu"));
+    for entry in &definition {
+        let submenu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &NSString::from_str(&entry.label));
+        for item in &entry.items {
+            if let Some(item) = build_item(mtm, item, &target) {
+                submenu.addItem(&item);
+            }
+        }
+        let menu_item = new_item(mtm, &entry.label, None, "");
+        menu_item.setSubmenu(Some(&submenu));
+        menu.addItem(&menu_item);
+    }
+    Ok(menu)
+}
+
 pub(crate) fn set_application_menu(definition_json: &str) -> Result<(), String> {
     let Some(mtm) = MainThreadMarker::new() else {
         return Err("menu.setApplicationMenu must run on the main thread".to_string());

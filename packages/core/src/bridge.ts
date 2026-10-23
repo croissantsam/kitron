@@ -55,6 +55,17 @@ export interface KitronNativeModule {
   dialogOpenFile(argsJSON: string): Promise<string>;
   dialogSaveFile(argsJSON: string): Promise<string>;
   menuSetApplicationMenu(definitionJSON: string): Promise<string>;
+  // Phase-2 native APIs (spec §42).
+  trayCreate(argsJSON: string): Promise<string>;
+  traySetTitle(id: number, title: string): Promise<string>;
+  trayRemove(id: number): Promise<string>;
+  notificationShow(argsJSON: string): Promise<string>;
+  processEnv(name: string): Promise<string>;
+  processSpawn(argsJSON: string): Promise<string>;
+  shortcutRegister(accelerator: string): Promise<string>;
+  shortcutUnregister(accelerator: string): Promise<string>;
+  updaterCheck(argsJSON: string): Promise<string>;
+  updaterDownload(argsJSON: string): Promise<string>;
 }
 
 type TurboModuleProxy = {

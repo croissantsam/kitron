@@ -23,37 +23,12 @@ export { shell } from "@kitron/shell";
 export { menu } from "@kitron/menu";
 export type { MenuDefinition, MenuItemDefinition } from "@kitron/menu";
 
-import { KitronError } from "@kitron/core";
-
-function phase2(feature: string): never {
-  throw new KitronError({
-    code: "KITRON_PHASE2",
-    message:
-      `${feature} ships after the MVP gate (spec §41). ` +
-      "Track progress on the Kitron roadmap; feature-detect with try/catch.",
-  });
-}
-
-export const tray = {
-  create: (_options: unknown) => phase2("tray.create"),
-};
-
-export const notification = {
-  show: (_options: unknown) => phase2("notification.show"),
-};
-
-export const process = {
-  env: (_name: string) => phase2("process.env"),
-  spawn: (_options: unknown) => phase2("process.spawn"),
-};
-
-export const shortcut = {
-  register: (_accelerator: string, _handler: () => void) =>
-    phase2("shortcut.register"),
-  unregister: (_accelerator: string) => phase2("shortcut.unregister"),
-};
-
-export const updater = {
-  check: () => phase2("updater.check"),
-  download: () => phase2("updater.download"),
-};
+export { tray } from "@kitron/tray";
+export type { TrayCreateOptions, TrayMenuDefinition } from "@kitron/tray";
+export { notification } from "@kitron/notification";
+export type { NotificationOptions } from "@kitron/notification";
+export { process } from "@kitron/process";
+export type { SpawnOptions, SpawnResult } from "@kitron/process";
+export { shortcut } from "@kitron/shortcut";
+export { updater } from "@kitron/updater";
+export type { UpdateInfo } from "@kitron/updater";

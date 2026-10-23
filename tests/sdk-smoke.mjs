@@ -110,14 +110,14 @@ try {
     clipboardError instanceof kitron.KitronError &&
     clipboardError.code === "KITRON_UNAVAILABLE";
 
-  let phase2Error;
+  let trayError;
   try {
-    kitron.tray.create({});
+    await kitron.tray.create({});
   } catch (error) {
-    phase2Error = error;
+    trayError = error;
   }
-  results["tray.create throws KITRON_PHASE2"] =
-    phase2Error instanceof kitron.KitronError && phase2Error.code === "KITRON_PHASE2";
+  results["tray.create throws KITRON_UNAVAILABLE"] =
+    trayError instanceof kitron.KitronError && trayError.code === "KITRON_UNAVAILABLE";
 } finally {
   fs.rmSync(workdir, { recursive: true, force: true });
 }

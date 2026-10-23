@@ -120,6 +120,26 @@ char *kitron_dialog_save_file(const char *args_json);
 /// Args: [{"label":"File","items":[{"label":"New","action":"new-file"}]}].
 char *kitron_menu_set_application_menu(const char *definition_json);
 
+/* Phase-2 (spec §42): tray */
+char *kitron_tray_create(const char *args_json);
+char *kitron_tray_set_title(uint64_t id, const char *title);
+char *kitron_tray_remove(uint64_t id);
+
+/* Phase-2 (spec §42): notification */
+char *kitron_notification_show(const char *args_json);
+
+/* Phase-2 (spec §42): process */
+char *kitron_process_env(const char *name);
+char *kitron_process_spawn(const char *args_json);
+
+/* Phase-2 (spec §42): shortcut */
+char *kitron_shortcut_register(const char *accelerator);
+char *kitron_shortcut_unregister(const char *accelerator);
+
+/* Phase-2 (spec §42): updater */
+char *kitron_updater_check(const char *args_json);
+char *kitron_updater_download(const char *args_json);
+
 #ifdef __cplusplus
 } // extern "C"
 #endif

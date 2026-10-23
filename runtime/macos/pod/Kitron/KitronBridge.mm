@@ -400,6 +400,73 @@ RCT_EXPORT_METHOD(menuSetApplicationMenu:(NSString *)definitionJSON
       kitron_menu_set_application_menu(definitionJSON.UTF8String ?: "[]")));
 }
 
+// Phase-2: tray
+RCT_EXPORT_METHOD(trayCreate:(NSString *)argsJSON
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  resolve(KitronCopyAndFree(kitron_tray_create(argsJSON.UTF8String ?: "{}")));
+}
+
+RCT_EXPORT_METHOD(traySetTitle:(NSNumber *)id
+                  title:(NSString *)title
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  resolve(KitronCopyAndFree(kitron_tray_set_title(id.unsignedLongLongValue,
+                                                 (title ?: @"").UTF8String)));
+}
+
+RCT_EXPORT_METHOD(trayRemove:(NSNumber *)id
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  resolve(KitronCopyAndFree(kitron_tray_remove(id.unsignedLongLongValue)));
+}
+
+// Phase-2: notification
+RCT_EXPORT_METHOD(notificationShow:(NSString *)argsJSON
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  resolve(KitronCopyAndFree(kitron_notification_show(argsJSON.UTF8String ?: "{}")));
+}
+
+// Phase-2: process
+RCT_EXPORT_METHOD(processEnv:(NSString *)name
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  resolve(KitronCopyAndFree(kitron_process_env((name ?: @"").UTF8String)));
+}
+
+RCT_EXPORT_METHOD(processSpawn:(NSString *)argsJSON
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  resolve(KitronCopyAndFree(kitron_process_spawn(argsJSON.UTF8String ?: "{}")));
+}
+
+// Phase-2: shortcut
+RCT_EXPORT_METHOD(shortcutRegister:(NSString *)accelerator
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  resolve(KitronCopyAndFree(kitron_shortcut_register((accelerator ?: @"").UTF8String)));
+}
+
+RCT_EXPORT_METHOD(shortcutUnregister:(NSString *)accelerator
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  resolve(KitronCopyAndFree(kitron_shortcut_unregister((accelerator ?: @"").UTF8String)));
+}
+
+// Phase-2: updater
+RCT_EXPORT_METHOD(updaterCheck:(NSString *)argsJSON
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  resolve(KitronCopyAndFree(kitron_updater_check(argsJSON.UTF8String ?: "{}")));
+}
+
+RCT_EXPORT_METHOD(updaterDownload:(NSString *)argsJSON
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  resolve(KitronCopyAndFree(kitron_updater_download(argsJSON.UTF8String ?: "{}")));
+}
+
 @end
 
 // ---------------------------------------------------------------------------

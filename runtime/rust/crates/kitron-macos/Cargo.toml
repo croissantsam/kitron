@@ -21,6 +21,9 @@ workspace = true
 [dependencies.objc2-app-kit]
 workspace = true
 
+[dependencies.objc2-user-notifications]
+workspace = true
+
 [dependencies.objc2-foundation]
 workspace = true
 
