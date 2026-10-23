@@ -63,6 +63,25 @@ final class KitronAppDelegate: NSObject, NSApplicationDelegate {
   func applicationWillTerminate(_ notification: Notification) {
     KitronEmitAppEvent("quit")
   }
+
+  /// Deep link: another process opened a custom-scheme URL targeting this app.
+  func application(_ application: NSApplication, open urls: [URL]) {
+    let payload = ["urls": urls.map { $0.absoluteString }]
+    if let data = try? JSONSerialization.data(withJSONObject: payload),
+       let json = String(data: data, encoding: .utf8) {
+      KitronEmitAppEventPayload("openUrl", json)
+    }
+  }
+
+  /// File association: the user opened a file bound to this app.
+  func application(_ sender: NSApplication, openFiles filenames: [String]) {
+    let payload = ["paths": filenames]
+    if let data = try? JSONSerialization.data(withJSONObject: payload),
+       let json = String(data: data, encoding: .utf8) {
+      KitronEmitAppEventPayload("openFile", json)
+    }
+    sender.reply(toOpenOrPrint: .success)
+  }
 }
 
 // MARK: - React Native Delegate

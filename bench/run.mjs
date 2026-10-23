@@ -67,10 +67,14 @@ async function prepare() {
       await new Promise((resolve) => result.on("close", resolve));
       if (result.exitCode !== 0) throw new Error("kitron create failed");
     }
-    if (!(await kitronAppPath())) {
-      console.log("[prepare] kitron build (Release, embedded assets) …");
-      execFileSync("node", [cli, "build", KITRON_APP_DIR], { stdio: "inherit", cwd: ROOT });
-    }
+    // Install the FPS/scroll workload as the app's root component.
+    await fs.writeFile(
+      path.join(KITRON_APP_DIR, "App.tsx"),
+      await fs.readFile(path.join(ROOT, "bench/kitron-app-fps.tsx"), "utf8"),
+    );
+    // Always rebuild so the workload change is picked up.
+    console.log("[prepare] kitron build (Release, embedded assets) …");
+    execFileSync("node", [cli, "build", KITRON_APP_DIR], { stdio: "inherit", cwd: ROOT });
   }
   const appPath = await kitronAppPath();
   if (!appPath) throw new Error(`no Release .app under ${RELEASE}`);
@@ -139,11 +143,13 @@ async function sampleIdle(wrapper, appPid) {
 
 async function measureKitron(appPath) {
   const starts = [];
+  const fpsSamples = [];
   let mem = 0;
   for (let i = 0; i < RUNS; i++) {
     const { wrapper, result } = await runOnce("bench/measure-kitron.mjs", [appPath]);
     if (result.error) throw new Error(`kitron: ${result.error}`);
     starts.push(result.startupReadyMs);
+    if (result.scrollMs != null) fpsSamples.push(result.scrollMs);
     if (i === 0) mem = await sampleIdle(wrapper, result.pid);
     else {
       try {
@@ -155,11 +161,12 @@ async function measureKitron(appPath) {
     }
     await sleep(500);
   }
-  return { startupMs: median(starts), allStarts: starts, idleRssKiB: mem };
+  return { startupMs: median(starts), allStarts: starts, idleRssKiB: mem, scrollMs: fpsSamples.length ? median(fpsSamples) : null };
 }
 
 async function measureElectron() {
   const starts = [];
+  const fpsSamples = [];
   let mem = 0;
   let fallback = false;
   for (let i = 0; i < RUNS; i++) {
@@ -167,6 +174,7 @@ async function measureElectron() {
     if (result.error) throw new Error(`electron: ${result.error}`);
     starts.push(result.startupReadyMs);
     fallback = fallback || result.fallback;
+    if (result.scrollMs != null) fpsSamples.push(result.scrollMs);
     if (i === 0) mem = await sampleIdle(wrapper, result.pid);
     else {
       try {
@@ -178,7 +186,7 @@ async function measureElectron() {
     }
     await sleep(800);
   }
-  return { startupMs: median(starts), allStarts: starts, idleRssKiB: mem, fallback };
+  return { startupMs: median(starts), allStarts: starts, idleRssKiB: mem, fallback, scrollMs: fpsSamples.length ? median(fpsSamples) : null };
 }
 
 async function dirSize(p) {
@@ -215,6 +223,7 @@ const report = {
     startupAllMs: kitron.allStarts,
     idleRssMiB: +(kitron.idleRssKiB / 1024).toFixed(1),
     appKiB: kitronApp,
+    scrollMsMedian: kitron.scrollMs,
   },
   electron: electron.error ? { error: electron.error } : {
     startupReadyMsMedian: electron.startupMs,
@@ -222,6 +231,7 @@ const report = {
     idleRssMiB: +(electron.idleRssKiB / 1024).toFixed(1),
     frameworkKiB: electronApp,
     paintFallback: electron.fallback,
+    scrollMsMedian: electron.scrollMs,
   },
 };
 

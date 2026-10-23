@@ -1,0 +1,61 @@
+name: release
+
+# Manual release flow: bump the version, commit, tag and create a GitHub Release.
+# The `publish` workflow then publishes to npm automatically.
+on:
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Version bump type"
+        required: true
+        default: "patch"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+      preid:
+        description: "Prerelease identifier (e.g. beta). Leave empty for a stable release."
+        required: false
+        type: string
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Bump version
+        run: |
+          if [ -n "${{ inputs.preid }}" ]; then
+            npm version ${{ inputs.bump }} --preid=${{ inputs.preid }} -m "chore(release): %s"
+          else
+            npm version ${{ inputs.bump }} -m "chore(release): %s"
+          fi
+
+      - name: Push commit and tag
+        run: |
+          git push origin HEAD
+          git push origin --tags
+
+      - name: Create GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG=$(git describe --tags --abbrev=0)
+          gh release create "$TAG" --title "$TAG" --generate-notes

@@ -34,6 +34,41 @@ backend.onInvoke("report.run", (payload) => {
   return { done: true };
 });
 
+// Worker support (spec §43): spawn Node worker_threads and bridge their
+// messages to the UI as `worker.message` / `worker.error` / `worker.exit`.
+import { Worker } from "node:worker_threads";
+
+const _workers = new Map<number, Worker>();
+let _nextWorkerId = 1;
+
+backend.onInvoke("worker.spawn", (payload) => {
+  const entry = String((payload as { entry?: unknown }).entry ?? "");
+  if (!entry) throw new Error("worker.spawn requires an `entry` path");
+  const id = _nextWorkerId++;
+  const w = new Worker(entry, { execArgv: ["--experimental-strip-types"] });
+  w.on("message", (data) => backend.emit("worker.message", { id, data }));
+  w.on("error", (e) => backend.emit("worker.error", { id, message: String(e) }));
+  w.on("exit", (code) => {
+    backend.emit("worker.exit", { id, code });
+    _workers.delete(id);
+  });
+  _workers.set(id, w);
+  return { id };
+});
+
+backend.onInvoke("worker.post", (payload) => {
+  const { id, message } = payload as { id: number; message: unknown };
+  _workers.get(id)?.postMessage(message);
+  return { ok: true };
+});
+
+backend.onInvoke("worker.terminate", (payload) => {
+  const id = Number((payload as { id?: unknown }).id);
+  _workers.get(id)?.terminate();
+  _workers.delete(id);
+  return { ok: true };
+});
+
 setTimeout(() => {
-  logger.info("backend ready — handlers: math.add, users.get, report.run");
+  logger.info("backend ready — handlers: math.add, users.get, report.run, worker.*");
 }, 0);

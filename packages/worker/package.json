@@ -1,0 +1,19 @@
+{
+  "name": "@kitron/worker",
+  "version": "0.1.0",
+  "description": "Kitron background workers (Node worker_threads, phase 3)",
+  "license": "MIT",
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "dependencies": {
+    "@kitron/core": "workspace:*",
+    "@kitron/node": "workspace:*"
+  }
+}

@@ -213,6 +213,7 @@ export function vendorSdkPackages(appRoot: string, pkgRoot: string): void {
     ["packages/shell", "@kitron/shell"],
     ["packages/shortcut", "@kitron/shortcut"],
     ["packages/updater", "@kitron/updater"],
+    ["packages/worker", "@kitron/worker"],
     ["packages/kitron", "kitron"],
   ];
   const typescript = loadTypescript();

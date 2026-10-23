@@ -68,6 +68,22 @@ export const app = {
     return events.on(name, listener);
   },
 
+  /** Subscribes to deep-link URL opens (`app.openUrl`). */
+  onOpenUrl(listener: (urls: string[]) => void): () => void {
+    return events.on("app.openUrl", (event: KitronEvent) => {
+      const urls = (event.payload as { urls?: string[] } | null)?.urls ?? [];
+      listener(urls);
+    });
+  },
+
+  /** Subscribes to file-association opens (`app.openFile`). */
+  onOpenFile(listener: (paths: string[]) => void): () => void {
+    return events.on("app.openFile", (event: KitronEvent) => {
+      const paths = (event.payload as { paths?: string[] } | null)?.paths ?? [];
+      listener(paths);
+    });
+  },
+
   /** Requests app termination. Fires `app.beforeQuit` to JS first. */
   async quit(): Promise<void> {
     const native = getNativeModule();

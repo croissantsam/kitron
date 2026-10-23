@@ -17,6 +17,8 @@ export type KitronEventName =
   | "app.activate"
   | "app.beforeQuit"
   | "app.quit"
+  | "app.openUrl"
+  | "app.openFile"
   | "window.created"
   | "window.closed"
   | "window.focus"

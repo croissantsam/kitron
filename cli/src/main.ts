@@ -231,6 +231,47 @@ function embedRuntimeAssets(appPath: string, appRoot: string, config: KitronConf
   } catch {
     // ignore
   }
+
+  // Register deep links + file associations in the packaged Info.plist.
+  injectInfoPlist(appPath, config);
+}
+
+function injectInfoPlist(appPath: string, config: KitronConfig): void {
+  const plist = path.join(appPath, "Contents", "Info.plist");
+  if (!fs.existsSync(plist)) return;
+
+  const schemes = config.deepLinks ?? [];
+  if (schemes.length > 0) {
+    const urlTypes = schemes.map((scheme) => ({
+      CFBundleURLName: config.app.identifier,
+      CFBundleURLSchemes: [scheme],
+    }));
+    writePlistKey(plist, "CFBundleURLTypes", urlTypes);
+  }
+
+  const assoc = config.fileAssociations ?? [];
+  if (assoc.length > 0) {
+    const docTypes = assoc.map((a) => ({
+      CFBundleTypeName: a.type ?? a.ext,
+      CFBundleTypeExtensions: [a.ext],
+      CFBundleTypeRole: "Editor",
+      LSHandlerRank: "Owner",
+    }));
+    writePlistKey(plist, "CFBundleDocumentTypes", docTypes);
+  }
+}
+
+function writePlistKey(plist: string, key: string, value: unknown): void {
+  try {
+    const tmp = path.join(path.dirname(plist), `${key}.json`);
+    fs.writeFileSync(tmp, JSON.stringify(value));
+    execFileSync("plutil", ["-replace", key, "-json", fs.readFileSync(tmp, "utf8"), plist], {
+      stdio: "ignore",
+    });
+    fs.rmSync(tmp, { force: true });
+  } catch {
+    // plutil may reject; non-fatal.
+  }
 }
 
 function stripBinary(filePath: string): void {

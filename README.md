@@ -242,7 +242,27 @@ pnpm typecheck        # TypeScript (SDK + CLI)
 pnpm test             # typecheck + cargo test + node-host smoke + CLI e2e
 pnpm test:rust        # cargo test only
 pnpm build:rust       # cargo build --release -p kitron-macos
-```
+
+## Releasing (npm)
+
+Releases are automated via GitHub Actions:
+
+1. Go to **Actions → release → Run workflow**, pick `patch` / `minor` / `major`
+   (and an optional prerelease id such as `beta`).
+2. The workflow bumps `package.json`, commits, tags, and creates a GitHub
+   Release.
+3. The **publish** workflow then runs automatically: it verifies the tag
+   matches `package.json`, typechecks, runs the Rust tests, and publishes to
+   npm with provenance.
+
+Required secret: `NPM_TOKEN` (npm automation token with publish access).
+
+Manual alternative:
+```bash
+npm version patch        # bumps package.json + creates a git tag
+git push --follow-tags
+# then publish the GitHub Release from the tag — publish runs automatically
+``````
 
 The macOS end-to-end gate (pod install + xcodebuild + launch) is opt-in:
 

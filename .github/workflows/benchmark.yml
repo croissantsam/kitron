@@ -37,18 +37,18 @@ jobs:
           md = [
               f"### Kitron vs Electron (median of {r.get('runs', '?')} runs, "
               f"Electron {r.get('electronVersion', '?')})", "",
-              "| App | Cold start → ready (ms) | Idle, whole tree (MiB) | Shipped (MB) |",
-              "|---|---|---|---|",
+              "| App | Cold start → ready (ms) | Scroll 2000 rows (ms) | Idle, whole tree (MiB) | Shipped (MB) |",
+              "|---|---|---|---|---|",
           ]
           for name in ("kitron", "electron"):
               side = r.get(name, {})
               if side.get("error"):
-                  md.append(f"| **{name}** | error: {side['error']} | — | — |")
+                  md.append(f"| **{name}** | error: {side['error']} | — | — | — |")
                   continue
               size = side.get("appKiB", side.get("frameworkKiB", -1))
               md.append(
-                  f"| **{name}** | {side['startupReadyMsMedian']} | {side['idleRssMiB']} "
-                  f"| ~{size // 1024} |"
+                  f"| **{name}** | {side['startupReadyMsMedian']} | {side.get('scrollMsMedian', '—')} "
+                  f"| {side['idleRssMiB']} | ~{size // 1024} |"
               )
           summary = os.environ.get("GITHUB_STEP_SUMMARY")
           if summary:

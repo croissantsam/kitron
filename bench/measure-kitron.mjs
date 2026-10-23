@@ -1,10 +1,8 @@
 /**
  * Measures one Kitron cold start: spawn the packaged Release app with a clean
- * environment (no Metro, no KITRON_* vars — exactly what a user launches) and
- * watch stdout for the runtime chain. READY = "app.ready received", which the
- * app logs once React has mounted its UI (the same marker the macOS e2e
- * asserts). Prints one JSON line, then keeps the child alive for memory
- * sampling (the parent kills it).
+ * environment and watch stdout/stderr for the runtime chain. Also captures a
+ * FPS measurement logged by the app after ~4s.
+ * Prints one JSON line, then keeps the child alive for memory sampling.
  *
  * Usage: node bench/measure-kitron.mjs <app-path>
  */
@@ -34,18 +32,24 @@ const t0 = Date.now();
 const child = spawn(bin, [], {
   stdio: ["ignore", "pipe", "pipe"],
   cwd: "/tmp",
-  // Standalone launch: embedded Node, bundled JS, no SDK helpers reachable.
   env: { HOME: process.env.HOME, PATH: "/usr/bin:/bin:/usr/sbin:/sbin" },
 });
 let done = false;
-// The packaged app logs everything through NSLog → stderr (0 bytes on
-// stdout — verified). Both pipes feed the same scanner.
+let startupReadyMs = null;
+let scrollMs = null;
 const scan = (chunk) => {
   for (const line of String(chunk).split("\n")) {
     if (!line.trim()) continue;
-    if (/app\.ready received/.test(line) && !done) {
+    if (/app\.ready received/.test(line) && startupReadyMs === null) {
+      startupReadyMs = Date.now() - t0;
+    }
+    const m = line.match(/SCROLL_RESULT\D*(\d+)/);
+    if (m && scrollMs === null) {
+      scrollMs = Number(m[1]);
+    }
+    if (startupReadyMs !== null && scrollMs !== null && !done) {
       done = true;
-      console.log(JSON.stringify({ pid: child.pid, startupReadyMs: Date.now() - t0 }));
+      console.log(JSON.stringify({ pid: child.pid, startupReadyMs, scrollMs }));
     }
   }
 };
@@ -57,8 +61,13 @@ child.on("error", (e) => {
 });
 setTimeout(() => {
   if (!done) {
-    console.log(JSON.stringify({ error: "timeout waiting for app.ready", elapsedMs: Date.now() - t0 }));
-    process.exit(1);
+    if (startupReadyMs !== null) {
+      done = true;
+      console.log(JSON.stringify({ pid: child.pid, startupReadyMs, scrollMs }));
+    } else {
+      console.log(JSON.stringify({ error: "timeout waiting for app.ready", elapsedMs: Date.now() - t0 }));
+      process.exit(1);
+    }
   }
-}, 60000);
+}, 20000);
 setInterval(() => {}, 1000);

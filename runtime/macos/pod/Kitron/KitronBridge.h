@@ -35,6 +35,7 @@ NS_ASSUME_NONNULL_BEGIN
 /// into the runtime event bus so `app.on(...)` receives it (spec §11).
 /// Called by the platform shell (the app's `AppDelegate`).
 FOUNDATION_EXPORT void KitronEmitAppEvent(NSString *name);
+FOUNDATION_EXPORT void KitronEmitAppEventPayload(NSString *name, NSString *payloadJSON);
 
 /// Application bootstrap. Pre-creates `RCTHost` (so Kitron can hook the JSI
 /// runtime before engine start), creates the main native window through the

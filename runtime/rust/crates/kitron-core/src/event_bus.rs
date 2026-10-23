@@ -28,6 +28,8 @@ pub enum EventName {
     NodeEvent,
     MenuAction,
     ShortcutTriggered,
+    AppOpenUrl,
+    AppOpenFile,
 }
 
 impl EventName {
@@ -54,6 +56,8 @@ impl EventName {
             "backend.event" => Self::NodeEvent,
             "menu.action" => Self::MenuAction,
             "shortcut.triggered" => Self::ShortcutTriggered,
+            "app.openUrl" => Self::AppOpenUrl,
+            "app.openFile" => Self::AppOpenFile,
             _ => return None,
         })
     }
@@ -80,6 +84,8 @@ impl EventName {
             Self::NodeEvent => "backend.event",
             Self::MenuAction => "menu.action",
             Self::ShortcutTriggered => "shortcut.triggered",
+            Self::AppOpenUrl => "app.openUrl",
+            Self::AppOpenFile => "app.openFile",
         }
     }
 }

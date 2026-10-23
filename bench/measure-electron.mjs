@@ -1,9 +1,3 @@
-/**
- * Measures one Electron cold start: spawn app → wait for READY on stdout.
- * Prints one JSON line, then keeps the child alive for memory sampling.
- *
- * Usage: node bench/measure-electron.mjs <app-dir>
- */
 import { spawn } from "node:child_process";
 import path from "node:path";
 
@@ -18,16 +12,25 @@ const child = spawn(electronBin, ["--no-sandbox", "."], {
 });
 
 let done = false;
+let startupReadyMs = null;
+let scrollMs = null;
 child.stdout.on("data", (chunk) => {
   for (const line of String(chunk).split("\n")) {
     if (!line.trim()) continue;
     try {
       const msg = JSON.parse(line);
-      if ((msg.event === "READY" || msg.event === "READY_FALLBACK") && !done) {
+      if ((msg.event === "READY" || msg.event === "READY_FALLBACK") && startupReadyMs === null) {
+        startupReadyMs = Date.now() - t0;
+      }
+      if (msg.event === "SCROLL" && scrollMs === null) {
+        scrollMs = msg.ms;
+      }
+      if (startupReadyMs !== null && scrollMs !== null && !done) {
         done = true;
         console.log(JSON.stringify({
           pid: child.pid,
-          startupReadyMs: Date.now() - t0,
+          startupReadyMs,
+          scrollMs,
           fallback: msg.event === "READY_FALLBACK",
         }));
       }
@@ -43,9 +46,14 @@ child.on("error", (e) => {
 });
 setTimeout(() => {
   if (!done) {
-    console.log(JSON.stringify({ error: "timeout waiting for READY", elapsedMs: Date.now() - t0 }));
-    process.exit(1);
+    if (startupReadyMs !== null) {
+      done = true;
+      console.log(JSON.stringify({ pid: child.pid, startupReadyMs, scrollMs, fallback: false }));
+    } else {
+      console.log(JSON.stringify({ error: "timeout waiting for READY", elapsedMs: Date.now() - t0 }));
+      process.exit(1);
+    }
   }
-}, 60000);
+}, 20000);
 
 setInterval(() => {}, 1000);

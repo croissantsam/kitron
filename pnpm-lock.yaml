@@ -168,6 +168,15 @@ importers:
         specifier: workspace:*
         version: link:../core
 
+  packages/worker:
+    dependencies:
+      '@kitron/core':
+        specifier: workspace:*
+        version: link:../core
+      '@kitron/node':
+        specifier: workspace:*
+        version: link:../node
+
   templates/app:
     dependencies:
       '@babel/runtime':

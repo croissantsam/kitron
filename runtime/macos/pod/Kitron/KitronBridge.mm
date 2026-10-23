@@ -503,6 +503,13 @@ void KitronEmitAppEvent(NSString *name) {
   KitronCopyAndFree(response);
 }
 
+void KitronEmitAppEventPayload(NSString *name, NSString *payloadJSON) {
+  NSString *value = [name copy] ?: @"";
+  NSString *payload = [payloadJSON copy] ?: @"{}";
+  char *response = kitron_emit_app_event_payload(value.UTF8String, payload.UTF8String);
+  KitronCopyAndFree(response);
+}
+
 // ---------------------------------------------------------------------------
 // KitronRuntimeDelegate — injects the __kitron JSI host object
 // ---------------------------------------------------------------------------

@@ -1,0 +1,72 @@
+name: publish
+
+# Publish the Kitron runtime/CLI to npm on every GitHub Release.
+# Triggered by publishing a release (tag like v0.1.0). The release tag must
+# match the `version` field of package.json (without the leading "v").
+on:
+  release:
+    types: [published]
+
+jobs:
+  publish:
+    runs-on: macos-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      id-token: write   # for npm provenance
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Toolchain (pnpm, Rust)
+        run: |
+          npm install -g pnpm
+          rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Verify version matches release tag
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          echo "package.json: $PKG_VERSION"
+          echo "release tag:  $TAG_VERSION"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "::error::package.json version ($PKG_VERSION) does not match release tag ($TAG_VERSION)"
+            exit 1
+          fi
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Rust tests
+        run: KITRON_NODE_PATH="$(command -v node)" cargo test --manifest-path runtime/rust/Cargo.toml
+
+      - name: Publish to npm
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # Optional: smoke-test the published package from a clean consumer.
+  smoke:
+    needs: publish
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Toolchain (Rust for the consumer build)
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+          source "$HOME/.cargo/env"
+          rustup target add aarch64-apple-darwin
+      - name: Create an app from the published package
+        run: |
+          npx kitron@${{ github.ref_name }} create /tmp/smoke-app --name SmokeApp --identifier dev.kitron.smoke
+      - name: Doctor
+        run: cd /tmp/smoke-app && npx kitron doctor
+      - name: Build
+        run: cd /tmp/smoke-app && npx kitron build

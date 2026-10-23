@@ -1,6 +1,30 @@
 <!doctype html>
 <html>
-  <body style="margin:0;display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif">
-    <h1>Hello Electron</h1>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      #scroller { height: 100vh; overflow: auto; }
+      .row { height: 40px; padding: 8px; box-sizing: border-box; border-bottom: 1px solid #eee; }
+    </style>
+  </head>
+  <body style="margin:0;font-family:sans-serif">
+    <h1 style="margin:0;padding:8px">Hello Electron</h1>
+    <div id="scroller"><div id="content"></div></div>
+    <script>
+      const scroller = document.getElementById('scroller');
+      const content = document.getElementById('content');
+      for (let i = 0; i < 2000; i++) {
+        const d = document.createElement('div');
+        d.className = 'row';
+        d.textContent = 'Row ' + i;
+        content.appendChild(d);
+      }
+      const start = performance.now();
+      const max = scroller.scrollHeight - scroller.clientHeight;
+      scroller.scrollTop = max;
+      requestAnimationFrame(() => {
+        console.log(JSON.stringify({ event: 'SCROLL', ms: Math.round(performance.now() - start) }));
+      });
+    </script>
   </body>
 </html>

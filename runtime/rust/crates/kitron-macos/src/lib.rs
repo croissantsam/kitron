@@ -790,6 +790,42 @@ pub unsafe extern "C" fn kitron_updater_install(args: *const c_char) -> *mut c_c
     }
 }
 
+/// Emits an app lifecycle event with a JSON payload (spec §11, deep links /
+/// file associations). `name` ∈ activate|ready|beforeQuit|quit|openUrl|openFile.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_emit_app_event_payload(
+    name: *const c_char,
+    payload: *const c_char,
+) -> *mut c_char {
+    let value = if name.is_null() {
+        String::new()
+    } else {
+        unsafe { CStr::from_ptr(name) }.to_string_lossy().into_owned()
+    };
+    let payload_val = if payload.is_null() {
+        serde_json::json!({})
+    } else {
+        unsafe { c_string_to_json(payload) }.unwrap_or(serde_json::json!({}))
+    };
+    let event = match value.as_str() {
+        "activate" => EventName::AppActivate,
+        "ready" => EventName::AppReady,
+        "beforeQuit" => EventName::AppBeforeQuit,
+        "quit" => EventName::AppQuit,
+        "openUrl" => EventName::AppOpenUrl,
+        "openFile" => EventName::AppOpenFile,
+        other => {
+            let e = KitronError::code(
+                "APP_EVENT_UNKNOWN",
+                format!("unknown app lifecycle event: {other}"),
+            );
+            return json_to_c_string(status_err(&e));
+        }
+    };
+    core().emit(event, payload_val);
+    json_to_c_string(status_ok(serde_json::json!({})))
+}
+
 /// Emits an app lifecycle event into the runtime event bus (spec §11).
 /// The platform shell (Swift `AppDelegate`) calls this for the lifecycle
 /// transitions AppKit reports: `activate`, `ready`, `quit`.

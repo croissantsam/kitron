@@ -84,6 +84,12 @@ void kitron_set_event_sink(uintptr_t context, KitronEventSink sink);
 /// into the runtime event bus. Called by the platform shell.
 char *kitron_emit_app_event(const char *name);
 
+/// Emits an app lifecycle event with a JSON payload (deep links / file opens).
+char *kitron_emit_app_event_payload(const char *name, const char *payload_json);
+
+/// Emits an app lifecycle event with a JSON payload (deep links / file opens).
+char *kitron_emit_app_event_payload(const char *name, const char *payload_json);
+
 /* ---------------------------------------------------------------------------
  * Phase-2 native APIs (spec §42). Each one is gated by an explicit
  * permission declared in kitron.config.ts (spec §23).

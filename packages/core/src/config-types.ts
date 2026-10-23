@@ -42,6 +42,13 @@ export interface KitronBackendConfig {
   autoStart?: boolean;
 }
 
+export interface KitronFileAssociation {
+  /** File extension without the dot, e.g. "md". */
+  ext: string;
+  /** Optional UTI type, e.g. "public.plain-text". */
+  type?: string;
+}
+
 export interface KitronConfig {
   app: KitronAppConfig;
   window?: KitronWindowConfig;
@@ -50,5 +57,9 @@ export interface KitronConfig {
   /** Legacy spelling of `backend` (TypeScript backends only). */
   node?: KitronNodeConfig;
   permissions?: string[];
+  /** Custom URL schemes the app handles (deep links), e.g. ["myapp"]. */
+  deepLinks?: string[];
+  /** File extensions the app opens, e.g. [{ ext: "md" }]. */
+  fileAssociations?: KitronFileAssociation[];
   extra?: Record<string, unknown>;
 }

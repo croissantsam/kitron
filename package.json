@@ -1,8 +1,7 @@
 {
   "name": "kitron",
-  "private": true,
   "version": "0.1.0",
-  "description": "Desktop runtime for React Native + TypeScript + Node.js apps, powered by native Rust — without Chromium.",
+  "description": "Desktop runtime for React Native + TypeScript + Node.js apps — powered by native Rust, without Chromium.",
   "license": "MIT",
   "packageManager": "pnpm@11.21.0",
   "type": "module",
@@ -12,12 +11,42 @@
   "bin": {
     "kitron": "./cli/src/kitron.ts"
   },
+  "files": [
+    "cli",
+    "runtime",
+    "packages",
+    "templates",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "instruction.md",
+    "!**/node_modules",
+    "!**/target",
+    "!**/*.a",
+    "!**/*.rlib"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/croissantlabs/kitron.git"
+  },
+  "keywords": [
+    "react-native",
+    "desktop",
+    "electron-alternative",
+    "rust",
+    "node",
+    "typescript"
+  ],
   "scripts": {
     "kitron": "node cli/src/kitron.ts",
     "typecheck": "tsc --noEmit",
     "test": "bash tests/run.sh",
     "bench": "node bench/run.mjs",
     "doctor": "node cli/src/kitron.ts doctor",
+    "prepublishOnly": "npm run typecheck",
     "build:rust": "cargo build --release -p kitron-macos --manifest-path runtime/rust/Cargo.toml",
     "test:rust": "cargo test --manifest-path runtime/rust/Cargo.toml"
   },
