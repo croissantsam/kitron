@@ -74,8 +74,8 @@ jobs:
           grep -F '[event] app.quit' /tmp/smoke.out
           grep -F 'pump exited cleanly' /tmp/smoke.out
 
-      - name: Clippy on the shell crate
-        run: cargo clippy -p kitron-windows -- -D warnings
+      - name: Clippy on the shell crates
+        run: cargo clippy -p kitron-windows -p kitron-windows-host -- -D warnings
 
       - name: Header ↔ core ABI conformance (kitron.h mirrors the exports)
         shell: bash
