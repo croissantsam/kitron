@@ -206,7 +206,8 @@ fn abi_probe() {
             "the accelerator table exists after a menu with an accel"
         );
         // Real user path: the window's own WM_COMMAND dispatch (synchronous).
-        use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
+        // HWND came in with the diagnostic reads above.
+        use windows::Win32::Foundation::{LPARAM, WPARAM};
         use windows::Win32::UI::WindowsAndMessaging::{SendMessageW, WM_CLOSE, WM_COMMAND};
         let hwnd = HWND(window_ptr as *mut core::ffi::c_void);
         SendMessageW(hwnd, WM_COMMAND, Some(WPARAM(1)), Some(LPARAM(0)));
