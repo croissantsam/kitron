@@ -12,6 +12,7 @@ import {
   syncNodeHost,
   vendorRuntime,
   vendorSdkPackages,
+  vendorWindowsTemplate,
   loadTypescript,
 } from "./create.ts";
 import {
@@ -245,6 +246,7 @@ async function updateCommand(argv: string[]): Promise<number> {
   vendorSdkPackages(appRoot, sourceRoot);
   vendorRuntime(appRoot, sourceRoot, loadTypescript());
   syncNodeHost(appRoot);
+  vendorWindowsTemplate(appRoot);
 
   // Stamp for diagnostics (and for tests to observe the refresh).
   fs.mkdirSync(path.join(appRoot, ".kitron"), { recursive: true });

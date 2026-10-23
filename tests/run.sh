@@ -70,6 +70,9 @@ if node cli/src/kitron.ts create "$SCAFFOLD_APP" \
     && [ -f "$SCAFFOLD_APP/backend/index.ts" ] \
     && [ -f "$SCAFFOLD_APP/node_modules/kitron/dist/index.js" ] \
     && [ -f "$SCAFFOLD_APP/.kitron/host.mjs" ] \
+    && [ -f "$SCAFFOLD_APP/windows/kitron/KitronHost.cpp" ] \
+    && [ -f "$SCAFFOLD_APP/windows/kitron/KitronHost.h" ] \
+    && [ -f "$SCAFFOLD_APP/.kitron/windows-vendor.json" ] \
     && grep -q "ScaffoldedApp" "$SCAFFOLD_APP/package.json"; then
     echo "  create: PASS ($SCAFFOLD_APP)"
   else
@@ -86,7 +89,8 @@ if [ -d "$SCAFFOLD_APP" ]; then
     && [ -f "$SCAFFOLD_APP/node_modules/@kitron/core/dist/index.js" ] \
     && [ -f "$SCAFFOLD_APP/node_modules/@kitron/sdk/cli/dist/kitron.js" ] \
     && [ -f "$SCAFFOLD_APP/node_modules/@kitron/core/src/index.ts" ] \
-    && [ -x "$SCAFFOLD_APP/node_modules/.bin/kitron" ]; then
+    && [ -x "$SCAFFOLD_APP/node_modules/.bin/kitron" ] \
+    && grep -q "vendoredAt" "$SCAFFOLD_APP/.kitron/windows-vendor.json"; then
     echo "  update: PASS"
   else
     fail "kitron update did not re-vendor the app"

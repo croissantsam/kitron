@@ -95,6 +95,13 @@ const char *kDefaultSmokeMenu =
 extern "C" int kitron_host_main(int /*argc*/, char ** /*argv*/) {
   const char *smoke = std::getenv("KITRON_HOST_SMOKE");
 
+  // 0. Per-monitor-v2 DPI awareness — the shell reads physical pixels with
+  //    GetDpiForWindow and hands JS logical points, so virtualized DPI would
+  //    lie about the scale. Must be set before the first HWND exists; it
+  //    fails harmlessly (E_ACCESSDENIED) when already declared elsewhere
+  //    (e.g. the app manifest on the machine build).
+  SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+
   // 1. Core bootstrap — config snapshot arrives via KITRON_CONFIG_JSON (set
   //    by the CLI in dev; the probe/CI sets it itself).
   envelope(kitron_bootstrap(), "bootstrap");

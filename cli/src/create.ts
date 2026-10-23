@@ -11,6 +11,7 @@ import {
   NODE_HOST_TEMPLATE,
   POD_TEMPLATE_ROOT,
   SDK_ROOT,
+  WINDOWS_TEMPLATE_ROOT,
   buildRustStaticLib,
   copyDir,
   log,
@@ -119,9 +120,27 @@ export function syncKitronPod(appRoot: string): void {
   }
 }
 
+/** Copies the Windows app glue (templates/windows) into `windows/kitron/`.
+ *  Platform-neutral on purpose: the glue is built on a Windows machine (the
+ *  "machine step"), while vendoring happens like the macOS counterpart —
+ *  wholesale sync, so `kitron update` refreshes it in place. */
+export function vendorWindowsTemplate(appRoot: string): void {
+  copyDir(WINDOWS_TEMPLATE_ROOT, path.join(appRoot, "windows", "kitron"));
+  // Stamp for update-tooling parity with the macOS side's sdk-vendor.json.
+  const stamp = path.join(appRoot, ".kitron", "windows-vendor.json");
+  fs.mkdirSync(path.dirname(stamp), { recursive: true });
+  fs.writeFileSync(
+    stamp,
+    JSON.stringify(
+      { source: "templates/windows", vendoredAt: new Date().toISOString() },
+      null,
+      2,
+    ) + "\n",
+  );
+}
+
 /** Adds `pod 'Kitron', :path => 'Kitron'` to the app's macOS Podfile. */
-export function patchPodfile(appRoot: string): void {
-  const podfile = path.join(appRoot, "macos", "Podfile");
+export function patchPodfile(appRoot: string): void {  const podfile = path.join(appRoot, "macos", "Podfile");
   if (!fs.existsSync(podfile)) {
     throw new Error(`missing ${podfile} — run generate-macos first`);
   }
@@ -430,6 +449,10 @@ export async function create(argv: string[]): Promise<number> {
   // 2. Vendor the Kitron SDK packages for standalone resolution.
   vendorSdkPackages(destination, SDK_ROOT);
   syncNodeHost(destination);
+
+  // 2b. The Windows glue is vendored on every OS (the machine build only
+  //     consumes it later); independent of the macOS generator below.
+  vendorWindowsTemplate(destination);
 
   // 3. Generate the macOS Xcode project via react-native-macos's generator.
   const require = createRequire(import.meta.url);

@@ -29,6 +29,7 @@ export const NODE_HOST_TEMPLATE = path.join(SDK_ROOT, "runtime", "node", "host.m
 export const APP_TEMPLATE_ROOT = path.join(SDK_ROOT, "templates", "app");
 /** The Kitron AppDelegate — substituted into the generated Xcode project. */
 export const MACOS_TEMPLATE_ROOT = path.join(SDK_ROOT, "templates", "macos");
+export const WINDOWS_TEMPLATE_ROOT = path.join(SDK_ROOT, "templates", "windows");
 
 /**
  * Source root used by `kitron update`: an explicit `--sdk <dir>` (or
