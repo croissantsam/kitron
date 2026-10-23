@@ -128,25 +128,79 @@ fn abi_probe() {
         assert!(event("window.created"), "…and window.created");
 
         step("ops");
-        // 4. Every surface op (close exercised last; the WindowOp ladder
-        //    keeps wire names honest — no invented names).
+        // 4. Wire ops. Geometry first (contract: logical points in, logical
+        //    frames out), then state transitions with snapshot ground truth.
         for (op, args) in [
             ("setSize", r#"{"width":640,"height":480}"#),
             ("setPosition", r#"{"x":40,"y":60}"#),
             ("setTitle", r#"{"title":"renamed"}"#),
             ("setPreventClose", r#"{"preventClose":true}"#),
-            ("minimize", "{}"),
-            ("restore", "{}"),
-            ("maximize", "{}"),
-            ("focus", "{}"),
-            ("show", "{}"),
-            ("hide", "{}"),
         ] {
             step(&format!("op:{op}"));
             let raw =
                 kitron_windows::kitron_window_op(1, c_string(op), c_string(args));
             ok_result(raw, &format!("op {op}"));
         }
+
+        // minimize/restore flip the minimized flag truthfully.
+        step("op:minimize");
+        ok_result(
+            kitron_windows::kitron_window_op(1, c_string("minimize"), c_string("{}")),
+            "op minimize",
+        );
+        let snap = ok_result(kitron_windows::kitron_window_get(1), "windowGet-min");
+        assert_eq!(snap.get("minimized").and_then(|v| v.as_bool()), Some(true));
+        step("op:restore");
+        ok_result(
+            kitron_windows::kitron_window_op(1, c_string("restore"), c_string("{}")),
+            "op restore",
+        );
+        let snap = ok_result(kitron_windows::kitron_window_get(1), "windowGet-restore");
+        assert_eq!(snap.get("minimized").and_then(|v| v.as_bool()), Some(false));
+
+        // maximize takes the workspace geometry; restore hands the set frame
+        // back — the ladder ends un-maximized on purpose.
+        step("op:maximize");
+        ok_result(
+            kitron_windows::kitron_window_op(1, c_string("maximize"), c_string("{}")),
+            "op maximize",
+        );
+        let snap = ok_result(kitron_windows::kitron_window_get(1), "windowGet-max");
+        assert_eq!(snap.get("maximized").and_then(|v| v.as_bool()), Some(true));
+        step("op:restore2");
+        ok_result(
+            kitron_windows::kitron_window_op(1, c_string("restore"), c_string("{}")),
+            "op restore2",
+        );
+        let snap = ok_result(kitron_windows::kitron_window_get(1), "windowGet-restore2");
+        assert_eq!(snap.get("maximized").and_then(|v| v.as_bool()), Some(false));
+        let restored = snap.get("frame").cloned().unwrap_or_default();
+        assert_eq!(
+            restored.get("width").and_then(|v| v.as_f64()),
+            Some(640.0),
+            "the setSize frame survives a maximize/restore roundtrip"
+        );
+
+        // focus/show/hide round trip the visible flag.
+        step("op:focus");
+        ok_result(
+            kitron_windows::kitron_window_op(1, c_string("focus"), c_string("{}")),
+            "op focus",
+        );
+        step("op:show");
+        ok_result(
+            kitron_windows::kitron_window_op(1, c_string("show"), c_string("{}")),
+            "op show",
+        );
+        let snap = ok_result(kitron_windows::kitron_window_get(1), "windowGet-show");
+        assert_eq!(snap.get("visible").and_then(|v| v.as_bool()), Some(true));
+        step("op:hide");
+        ok_result(
+            kitron_windows::kitron_window_op(1, c_string("hide"), c_string("{}")),
+            "op hide",
+        );
+        let snap = ok_result(kitron_windows::kitron_window_get(1), "windowGet-hide");
+        assert_eq!(snap.get("visible").and_then(|v| v.as_bool()), Some(false));
 
         step("snapshot");
         // 5. Snapshot truth: logical frame (DPI 96 runner → 1.0) + state.

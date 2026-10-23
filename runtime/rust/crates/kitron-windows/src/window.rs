@@ -20,7 +20,7 @@ use windows::core::{w, HSTRING, PCWSTR};
 use windows::Win32::Foundation::{HINSTANCE, HMODULE, HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::HBRUSH;
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
-use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::HiDpi::{GetDpiForSystem, GetDpiForWindow};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, GetForegroundWindow, GetWindowTextLengthW,
     GetWindowTextW, GetWindowRect, IsIconic, IsWindowVisible, IsZoomed, PostQuitMessage,
@@ -89,6 +89,13 @@ fn ensure_window_class() -> Result<(), KitronError> {
     Ok(())
 }
 
+/// Logical points → physical pixels scale, using the system DPI — the same
+/// treatment `GetDpiForWindow` gives once the window exists.
+pub(crate) fn scale_system() -> f64 {
+    let dpi = unsafe { GetDpiForSystem() } as f64;
+    if dpi > 0.0 { dpi / 96.0 } else { 1.0 }
+}
+
 /// Logical points → physical pixels scale (96 DPI base, like macOS points).
 pub(crate) fn scale(hwnd: HWND) -> f64 {
     let dpi = unsafe { GetDpiForWindow(hwnd) } as f64;
@@ -119,6 +126,13 @@ pub fn create_window(args: &serde_json::Value) -> Result<serde_json::Value, Kitr
     let hmodule: HMODULE = unsafe { GetModuleHandleW(None) }.map_err(crate::werr)?;
     let hinstance = HINSTANCE(hmodule.0);
 
+    // Win32 geometry is physical pixels; the contract hands JS logical points.
+    // Scale once here so `setSize` (logical → physical) and the created frame
+    // agree at any DPI, exactly like the macOS twin's point-sized window.
+    let factor = scale_system();
+    let width_physical = (width_logical * factor).round() as i32;
+    let height_physical = (height_logical * factor).round() as i32;
+
     // SAFETY: main-thread create; class registered above; parameters are
     // owned for the call's duration.
     let hwnd: HWND = unsafe {
@@ -129,8 +143,8 @@ pub fn create_window(args: &serde_json::Value) -> Result<serde_json::Value, Kitr
             WINDOW_STYLE(WS_OVERLAPPEDWINDOW.0),
             80,
             80,
-            width_logical as i32,
-            height_logical as i32,
+            width_physical,
+            height_physical,
             None,
             None,
             Some(hinstance),
