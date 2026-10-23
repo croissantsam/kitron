@@ -9,7 +9,7 @@
     "node": ">=24"
   },
   "bin": {
-    "kitron": "./cli/src/kitron.ts"
+    "kitron": "./cli/dist/kitron.js"
   },
   "files": [
     "cli",
@@ -46,12 +46,15 @@
     "test": "bash tests/run.sh",
     "bench": "node bench/run.mjs",
     "doctor": "node cli/src/kitron.ts doctor",
-    "prepublishOnly": "npm run typecheck",
+    "prepublishOnly": "npm run typecheck && npm run build:cli",
     "build:rust": "cargo build --release -p kitron-macos --manifest-path runtime/rust/Cargo.toml",
+    "build:cli": "tsc -p cli/tsconfig.json",
     "test:rust": "cargo test --manifest-path runtime/rust/Cargo.toml"
   },
-  "devDependencies": {
-    "@types/node": "^24.19.2",
+  "dependencies": {
     "typescript": "^5.9.3"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2"
   }
 }

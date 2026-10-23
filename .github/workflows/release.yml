@@ -10,7 +10,7 @@ on:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
     timeout-minutes: 15
     # Skip the release commit itself and explicit skip requests.
     if: "!startsWith(github.event.head_commit.message, 'chore(release):') && !contains(github.event.head_commit.message, '[skip release]')"
@@ -30,6 +30,22 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Toolchain (Rust)
+        run: |
+          rustup target add aarch64-apple-darwin
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Rust tests
+        run: KITRON_NODE_PATH="$(command -v node)" cargo test --manifest-path runtime/rust/Cargo.toml
+
+      - name: SDK smoke
+        run: node --experimental-strip-types --disable-warning=ExperimentalWarning tests/sdk-smoke.mjs
+
+      - name: Bridge conformance
+        run: node tests/bridge-conformance.mjs
 
       - name: Bump version
         run: |

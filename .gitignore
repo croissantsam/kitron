@@ -3,6 +3,7 @@ node_modules/
 .turbo/
 *.tsbuildinfo
 dist/
+cli/dist/
 
 # Rust
 target/
