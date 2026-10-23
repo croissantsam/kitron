@@ -2,6 +2,7 @@
 
 import path from "node:path";
 import process from "node:process";
+import { execFileSync } from "node:child_process";
 
 import type { KitronConfig } from "@kitron/core";
 
@@ -134,6 +135,8 @@ async function bundleJs(appRoot: string): Promise<void> {
 function embedRuntimeAssets(appPath: string, appRoot: string, config: KitronConfig): void {
   const resources = path.join(appPath, "Contents", "Resources");
   const kitronDir = path.join(resources, "kitron");
+  fs.rmSync(kitronDir, { recursive: true, force: true });
+  fs.mkdirSync(kitronDir, { recursive: true });
   fs.mkdirSync(path.join(kitronDir, "node-host"), { recursive: true });
 
   const bundleDir = path.join(appRoot, "macos", "build", "bundle");
@@ -158,7 +161,14 @@ function embedRuntimeAssets(appPath: string, appRoot: string, config: KitronConf
   // Embedded Node.js backend (TypeScript runs natively on Node 24+); the
   // config entry stays relative to the packaged resources root.
   copyDir(path.join(appRoot, "backend"), path.join(kitronDir, "backend"));
-  copyDir(path.join(appRoot, ".kitron"), path.join(kitronDir, "node-host"));
+  // Only the Node host bootstrap is needed at runtime — the Rust build
+  // artifacts and Windows runtime sources stay in the dev tree.
+  const nodeHostDir = path.join(kitronDir, "node-host");
+  fs.mkdirSync(nodeHostDir, { recursive: true });
+  const hostMjs = path.join(appRoot, ".kitron", "host.mjs");
+  if (fs.existsSync(hostMjs)) {
+    fs.copyFileSync(hostMjs, path.join(nodeHostDir, "host.mjs"));
+  }
   copyDir(
     path.join(appRoot, "node_modules", "kitron"),
     path.join(kitronDir, "node_modules", "kitron"),
@@ -190,7 +200,66 @@ function embedRuntimeAssets(appPath: string, appRoot: string, config: KitronConf
   // The system Node binary as the packaged runtime (MVP §41 packaging gate).
   const nodeDir = path.join(kitronDir, "node", "bin");
   fs.mkdirSync(nodeDir, { recursive: true });
-  fs.copyFileSync(process.execPath, path.join(nodeDir, "node"));
+  const nodeTarget = path.join(nodeDir, "node");
+  fs.copyFileSync(process.execPath, nodeTarget);
+  stripBinary(nodeTarget);
+
+  // Prune vendored SDK copies to their runtime artifacts only (drop TS sources,
+  // tests and maps) — the embedded Node host only needs the compiled `dist/`.
+  pruneVendored(path.join(kitronDir, "node_modules"));
+
+  // Strip debug symbols from the packaged app binary and frameworks.
+  const macosDir = path.join(appPath, "Contents", "MacOS");
+  for (const entry of fs.readdirSync(macosDir)) {
+    stripBinary(path.join(macosDir, entry));
+  }
+  const frameworksDir = path.join(appPath, "Contents", "Frameworks");
+  if (fs.existsSync(frameworksDir)) {
+    for (const entry of fs.readdirSync(frameworksDir, { withFileTypes: true })) {
+      const full = path.join(frameworksDir, entry.name);
+      if (entry.isFile()) stripBinary(full);
+      else if (entry.isDirectory()) {
+        for (const sub of fs.readdirSync(full)) {
+          stripBinary(path.join(full, sub));
+        }
+      }
+    }
+  }
+  // Stripping invalidates the ad-hoc signature; re-sign so the app launches.
+  try {
+    execFileSync("codesign", ["--force", "--deep", "--sign", "-", appPath], { stdio: "ignore" });
+  } catch {
+    // ignore
+  }
+}
+
+function stripBinary(filePath: string): void {
+  try {
+    if (!fs.statSync(filePath).isFile()) return;
+    // Only attempt on Mach-O / ELF-ish binaries; `strip` errors on text files.
+    execFileSync("strip", ["-x", filePath], { stdio: "ignore" });
+  } catch {
+    // Non-binary or already-stripped files are fine.
+  }
+}
+
+function pruneVendored(nodeModulesDir: string): void {
+  if (!fs.existsSync(nodeModulesDir)) return;
+  const walk = (dir: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (entry.name === "src" || entry.name === "test" || entry.name === "tests" || entry.name === "__tests__") {
+          fs.rmSync(full, { recursive: true, force: true });
+          continue;
+        }
+        walk(full);
+      } else if (/\.(ts|map|md|d\.ts)$/i.test(entry.name)) {
+        try { fs.rmSync(full, { force: true }); } catch { /* ignore */ }
+      }
+    }
+  };
+  walk(nodeModulesDir);
 }
 
 /** `kitron package [dir]` — wrap the Release .app into a macOS .dmg (§39). */

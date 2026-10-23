@@ -139,6 +139,7 @@ char *kitron_shortcut_unregister(const char *accelerator);
 /* Phase-2 (spec §42): updater */
 char *kitron_updater_check(const char *args_json);
 char *kitron_updater_download(const char *args_json);
+char *kitron_updater_install(const char *args_json);
 
 #ifdef __cplusplus
 } // extern "C"

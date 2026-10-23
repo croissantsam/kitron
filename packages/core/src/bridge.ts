@@ -66,6 +66,7 @@ export interface KitronNativeModule {
   shortcutUnregister(accelerator: string): Promise<string>;
   updaterCheck(argsJSON: string): Promise<string>;
   updaterDownload(argsJSON: string): Promise<string>;
+  updaterInstall(argsJSON: string): Promise<string>;
 }
 
 type TurboModuleProxy = {

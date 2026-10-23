@@ -467,6 +467,12 @@ RCT_EXPORT_METHOD(updaterDownload:(NSString *)argsJSON
   resolve(KitronCopyAndFree(kitron_updater_download(argsJSON.UTF8String ?: "{}")));
 }
 
+RCT_EXPORT_METHOD(updaterInstall:(NSString *)argsJSON
+                  resolver:(RCTPromiseResolveBlock)resolve
+                  rejecter:(__unused RCTPromiseRejectBlock)reject) {
+  resolve(KitronCopyAndFree(kitron_updater_install(argsJSON.UTF8String ?: "{}")));
+}
+
 @end
 
 // ---------------------------------------------------------------------------

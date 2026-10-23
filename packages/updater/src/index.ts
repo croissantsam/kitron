@@ -1,8 +1,10 @@
 /**
- * `@kitron/updater` — check for and download updates (spec §42).
+ * `@kitron/updater` — check for, download and install updates (spec §42).
  *
- * macOS checks a remote version endpoint and opens the release page in the
- * browser. Gated by the `updater` permission (spec §23).
+ * macOS checks a remote version endpoint, downloads the release bundle into
+ * the user's cache, verifies its SHA-256 (when provided) and stages an
+ * install that swaps the running `.app` on the next launch. Gated by the
+ * `updater` permission (spec §23).
  */
 
 import {
@@ -28,6 +30,17 @@ export interface UpdateInfo {
   updateAvailable: boolean;
 }
 
+export interface DownloadResult {
+  path: string;
+  verified: boolean;
+  size: number;
+}
+
+export interface InstallResult {
+  scheduled: boolean;
+  target: string;
+}
+
 export const updater = {
   /** Checks whether a newer version is available. */
   async check(url: string): Promise<UpdateInfo> {
@@ -36,8 +49,17 @@ export const updater = {
     ) as UpdateInfo;
   },
 
-  /** Opens the release page for download. */
-  async download(url: string): Promise<void> {
-    await requireNative().updaterDownload(JSON.stringify({ url }));
+  /** Downloads the release bundle. Returns its local path + verification. */
+  async download(url: string, sha256?: string): Promise<DownloadResult> {
+    return parseEnvelope(
+      await requireNative().updaterDownload(JSON.stringify({ url, sha256 })),
+    ) as DownloadResult;
+  },
+
+  /** Stages an install of a downloaded bundle (swaps on next launch). */
+  async install(path: string): Promise<InstallResult> {
+    return parseEnvelope(
+      await requireNative().updaterInstall(JSON.stringify({ path })),
+    ) as InstallResult;
   },
 };

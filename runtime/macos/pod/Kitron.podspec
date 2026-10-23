@@ -44,6 +44,9 @@ Pod::Spec.new do |s|
     "CLANG_CXX_LANGUAGE_STANDARD" => "c++20",
   }
 
+  # Carbon is needed for the global-shortcut backing (RegisterEventHotKey).
+  s.frameworks = "Carbon"
+
   s.dependency "React-Core"
   s.dependency "React-RCTAppDelegate"
   s.dependency "React-Fabric"

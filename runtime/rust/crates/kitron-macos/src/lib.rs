@@ -760,7 +760,8 @@ pub unsafe extern "C" fn kitron_updater_check(args: *const c_char) -> *mut c_cha
     }
 }
 
-/// Opens the release page for download. Args JSON: `{"url": "..."}`.
+/// Downloads the release bundle. Args JSON: `{"url": "...", "sha256": "..."}`.
+/// Result: `{"path": "...", "verified": bool, "size": N}`.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn kitron_updater_download(args: *const c_char) -> *mut c_char {
     let raw = if args.is_null() {
@@ -769,6 +770,21 @@ pub unsafe extern "C" fn kitron_updater_download(args: *const c_char) -> *mut c_
         unsafe { CStr::from_ptr(args) }.to_string_lossy().into_owned()
     };
     match updater::download(&raw) {
+        Ok(result) => json_to_c_string(status_ok(result)),
+        Err(e) => json_to_c_string(status_err(&e)),
+    }
+}
+
+/// Stages an install of a downloaded bundle. Args JSON: `{"path": "..."}`.
+/// Result: `{"scheduled": true, "target": "..."}`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn kitron_updater_install(args: *const c_char) -> *mut c_char {
+    let raw = if args.is_null() {
+        "{}".to_string()
+    } else {
+        unsafe { CStr::from_ptr(args) }.to_string_lossy().into_owned()
+    };
+    match updater::install(&raw) {
         Ok(result) => json_to_c_string(status_ok(result)),
         Err(e) => json_to_c_string(status_err(&e)),
     }

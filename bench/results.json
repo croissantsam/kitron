@@ -8,27 +8,27 @@
   "electronVersion": "35.7.5",
   "kitron": {
     "appPath": "/tmp/kitron-bench/kitron-app/macos/build/derived/Build/Products/Release/KitronBench.app",
-    "startupReadyMsMedian": 160,
+    "startupReadyMsMedian": 165,
     "startupAllMs": [
-      246,
-      161,
-      160,
-      158,
-      159
+      166,
+      163,
+      162,
+      166,
+      165
     ],
-    "idleRssMiB": 183.9,
-    "appKiB": 476536
+    "idleRssMiB": 111.1,
+    "appKiB": 117504
   },
   "electron": {
-    "startupReadyMsMedian": 268,
+    "startupReadyMsMedian": 260,
     "startupAllMs": [
-      261,
+      260,
       262,
-      271,
-      268,
-      269
+      258,
+      259,
+      266
     ],
-    "idleRssMiB": 400.2,
+    "idleRssMiB": 400,
     "frameworkKiB": 250744,
     "paintFallback": false
   }
