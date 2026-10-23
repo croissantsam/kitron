@@ -45,6 +45,14 @@ pub(crate) struct WindowEntry {
 unsafe impl Send for WindowEntry {}
 unsafe impl Sync for WindowEntry {}
 
+// Cloned out of the registry so snapshot helpers never hold the guard across
+// their own window reads (see `window_snapshot` on re-entrancy).
+impl Clone for WindowEntry {
+    fn clone(&self) -> Self {
+        Self { hwnd: self.hwnd, id: self.id, prevent_close: Arc::clone(&self.prevent_close) }
+    }
+}
+
 pub(crate) fn registry() -> &'static Mutex<HashMap<u64, WindowEntry>> {
     static REGISTRY: OnceLock<Mutex<HashMap<u64, WindowEntry>>> = OnceLock::new();
     REGISTRY.get_or_init(|| Mutex::new(HashMap::new()))
@@ -319,15 +327,22 @@ pub(crate) unsafe fn window_title(hwnd: HWND) -> String {
 }
 
 pub(crate) fn snapshots() -> Vec<WindowSnapshot> {
-    let guard = registry().lock().unwrap();
-    guard.values().map(snapshot_for).collect()
+    // Entries are cloned out and the guard released BEFORE snapshot_for runs:
+    // its window reads (GetWindowTextLengthW et al.) re-enter our own wndproc,
+    // whose first line takes this same lock — holding it here would deadlock
+    // the re-entrant read (a std Mutex is not re-entrant).
+    let entries: Vec<WindowEntry> = {
+        let guard = registry().lock().unwrap();
+        guard.values().cloned().collect()
+    };
+    entries.iter().map(snapshot_for).collect()
 }
 
 pub(crate) fn window_snapshot(id: u64) -> Result<WindowSnapshot, KitronError> {
-    let guard = registry().lock().unwrap();
-    guard
-        .get(&id)
-        .map(snapshot_for)
+    // Same guard discipline as `snapshots` above.
+    let entry = registry().lock().unwrap().get(&id).cloned();
+    entry
+        .map(|entry| snapshot_for(&entry))
         .ok_or_else(|| KitronError::code("WINDOW_NOT_FOUND", format!("no window with id {id}")))
 }
 
@@ -361,10 +376,16 @@ pub unsafe extern "C" fn kitron_windows_renderer_hwnd() -> usize {
 }
 
 pub(crate) fn request_quit() {
-    // Queues WM_CLOSE for every window → the WM_DESTROY teardown path.
-    let guard = registry().lock().unwrap();
-    for entry in guard.values() {
-        let _ = unsafe { DestroyWindow(entry.hwnd) };
+    // WM_CLOSE for every window, the WM_DESTROY teardown path following.
+    // Handles are collected FIRST and the guard released before any
+    // DestroyWindow: WM_DESTROY re-enters this wndproc, which takes the
+    // registry lock — held here it would deadlock the whole quit flow.
+    let targets: Vec<HWND> = {
+        let guard = registry().lock().unwrap();
+        guard.values().map(|entry| entry.hwnd).collect()
+    };
+    for hwnd in targets {
+        let _ = unsafe { DestroyWindow(hwnd) };
     }
 }
 
