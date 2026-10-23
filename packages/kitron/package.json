@@ -24,6 +24,7 @@
     "@kitron/shortcut": "workspace:*",
     "@kitron/tray": "workspace:*",
     "@kitron/updater": "workspace:*",
-    "@kitron/window": "workspace:*"
+    "@kitron/window": "workspace:*",
+    "@kitron/worker": "workspace:*"
   }
 }

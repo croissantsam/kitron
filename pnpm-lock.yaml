@@ -113,6 +113,9 @@ importers:
       '@kitron/window':
         specifier: workspace:*
         version: link:../window
+      '@kitron/worker':
+        specifier: workspace:*
+        version: link:../worker
 
   packages/menu:
     dependencies:
