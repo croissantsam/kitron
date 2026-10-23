@@ -26,6 +26,12 @@ jobs:
         with:
           node-version: 24
 
+      - name: Toolchain (pnpm)
+        run: npm install -g pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
@@ -36,7 +42,7 @@ jobs:
           rustup target add aarch64-apple-darwin
 
       - name: Typecheck
-        run: npm run typecheck
+        run: pnpm run typecheck
 
       - name: Rust tests
         run: KITRON_NODE_PATH="$(command -v node)" cargo test --manifest-path runtime/rust/Cargo.toml

@@ -27,6 +27,9 @@ jobs:
           npm install -g pnpm
           rustup target add aarch64-apple-darwin x86_64-apple-darwin
 
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
       - name: Verify version matches release tag
         run: |
           PKG_VERSION=$(node -p "require('./package.json').version")
@@ -39,7 +42,7 @@ jobs:
           fi
 
       - name: Typecheck
-        run: npm run typecheck
+        run: pnpm run typecheck
 
       - name: Rust tests
         run: KITRON_NODE_PATH="$(command -v node)" cargo test --manifest-path runtime/rust/Cargo.toml
