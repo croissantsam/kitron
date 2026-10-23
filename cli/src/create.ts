@@ -10,6 +10,7 @@ import {
   MACOS_TEMPLATE_ROOT,
   NODE_HOST_TEMPLATE,
   POD_TEMPLATE_ROOT,
+  RUST_WORKSPACE,
   SDK_ROOT,
   WINDOWS_TEMPLATE_ROOT,
   buildRustStaticLib,
@@ -126,6 +127,12 @@ export function syncKitronPod(appRoot: string): void {
  *  wholesale sync, so `kitron update` refreshes it in place. */
 export function vendorWindowsTemplate(appRoot: string): void {
   copyDir(WINDOWS_TEMPLATE_ROOT, path.join(appRoot, "windows", "kitron"));
+  // The Rust sources the Windows host compiles on the machine (`kitron dev
+  // --platform windows`, machine step) — the neutral workspace minus build
+  // artifacts (`target/` pruned; a few hundred KB of source).
+  copyDir(RUST_WORKSPACE, path.join(appRoot, ".kitron", "windows-runtime"), {
+    ignore: ["target"],
+  });
   // Stamp for update-tooling parity with the macOS side's sdk-vendor.json.
   const stamp = path.join(appRoot, ".kitron", "windows-vendor.json");
   fs.mkdirSync(path.dirname(stamp), { recursive: true });

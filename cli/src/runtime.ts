@@ -221,6 +221,61 @@ export function launchApp(appPath: string, env: Record<string, string>): ChildPr
   return child;
 }
 
+/**
+ * The Rust workspace the Windows host compiles from: the runtime sources
+ * vendored into the app by `vendorWindowsTemplate`, or the SDK checkout when
+ * the CLI runs from the repo.
+ */
+export function rustWorkspaceFor(appRoot: string): string {
+  const vendored = path.join(appRoot, ".kitron", "windows-runtime");
+  if (fs.existsSync(path.join(vendored, "Cargo.toml"))) {
+    return vendored;
+  }
+  return RUST_WORKSPACE;
+}
+
+/**
+ * `kitron dev --platform windows` — Metro + the native host process (spec §37
+ * dev loop, Windows twin of the macOS branch). The host pumps its own Win32
+ * event loop and owns the shell event flow (`kitron-bootstrap` → sink →
+ * window → app). Full RNW validation happens on a Windows machine — the
+ * machine-step checklist lives in the app's windows/kitron/README.md.
+ */
+export async function devWindows(
+  appRoot: string,
+  config: KitronConfig,
+  port = 8081,
+): Promise<void> {
+  const cargoRoot = rustWorkspaceFor(appRoot);
+  if (!fs.existsSync(path.join(cargoRoot, "Cargo.toml"))) {
+    log.fail(
+      `no Rust workspace at ${cargoRoot} — run \`kitron update\` to vendor the Windows runtime`,
+    );
+  }
+  log.info("building the Windows host (cargo, debug)…");
+  const build = run("cargo", ["build", "-p", "kitron-windows-host"], {
+    cwd: cargoRoot,
+  });
+  if (build.status !== 0) {
+    throw new Error(
+      "cargo build -p kitron-windows-host failed — check the MSVC toolchain (see windows/kitron/README.md)",
+    );
+  }
+  const exe = path.join(cargoRoot, "target", "debug", "kitron-windows-host.exe");
+  if (!fs.existsSync(exe)) {
+    throw new Error(`host binary missing after cargo build: ${exe}`);
+  }
+  void (await startMetro(appRoot, port));
+  const env = kitronLaunchEnv(appRoot, config, true);
+  child_process.spawn(exe, [], {
+    cwd: appRoot,
+    env: { ...process.env, ...env },
+    stdio: "inherit",
+  });
+  // Keep the CLI attached to the host + Metro until they exit.
+  await new Promise(() => {});
+}
+
 /** Starts Metro (react-native start) in the app root; resolves when ready.
  *  Returns null when a Metro instance is already serving the port. */
 export async function startMetro(
@@ -241,7 +296,12 @@ export async function startMetro(
   const child = child_process.spawn(
     "npx",
     ["react-native", "start", "--port", String(port)],
-    { cwd: appRoot, stdio: "inherit" },
+    {
+      cwd: appRoot,
+      stdio: "inherit",
+      // Windows resolves `npx` as an .cmd shim, which needs a shell to spawn.
+      shell: process.platform === "win32",
+    },
   );
   // Await readiness (Metro /status endpoint).
   const deadline = Date.now() + 30_000;

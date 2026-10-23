@@ -36,18 +36,21 @@ Windows SDK), Rust MSVC toolchain, Node. GN not involved.
 1. Restore `Microsoft.ReactNative` (NuGet) — the version must match the
    `react-native-windows` npm package pinned in the app's
    `package.json`. `nuget restore` into `windows/packages/`.
-2. Build the host in the app workspace from `.kitron/rust-target`…
-   actually: the app's vendored rust target directory —
-   `cargo build -p kitron-windows-host` with:
+2. Build the host in the app workspace from the vendored Rust sources
+   (`.kitron/windows-runtime/`, vendored by `kitron create` / `kitron
+   update`). `kitron dev --platform windows` does this automatically for
+   the plain (no-attach) exe. For the RNW-attach variant, build once with:
    - `KITRON_ATTACH_REACT` defined (env or build.rs flag),
    - the `Microsoft.ReactNative.Cxx` include dirs and `.lib` hand-off
      coming from the restored NuGet package (the glue's `#include`
      lines spell the expected layout).
 3. Sync the vendored `windows/kitron/` glue (already done by
    `kitron create` / `kitron update` on any OS).
-4. Run `kitron dev` on Windows — the CLI starts Metro, exports
-   `KITRON_CONFIG_JSON`, launches the host exe; React renders inside
-   window 1 (hot reload through Metro as usual).
+4. Run `kitron dev` on Windows — the launcher exists since
+   `kitron dev --platform windows` (on Windows the flag is the default): it
+   starts Metro, exports `KITRON_CONFIG_JSON`, builds the host exe from
+   `.kitron/windows-runtime/` and launches it. React renders inside
+   window 1 once the attach variant is wired (step 2).
 5. Validate: attach panic-guard (the glue dies loudly if RNW fails to
    init — no silent degradation), the ABI probe assertions already run
    in CI, the payload-diff session with the macOS twin (window ops,

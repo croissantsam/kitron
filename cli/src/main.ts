@@ -17,6 +17,7 @@ import {
 } from "./create.ts";
 import {
   buildXcode,
+  devWindows,
   discoverProject,
   ensurePods,
   findBuiltApp,
@@ -33,7 +34,7 @@ Usage:
   kitron create <dir> [--name N] [--identifier ID] [--backend rust]
   kitron update [dir] [--sdk <checkout>]
   kitron doctor
-  kitron dev     [dir] [--port 8081]
+  kitron dev     [dir] [--port 8081] [--platform macos|windows]
   kitron build   [dir]
   kitron package [dir]
   kitron run     [dir]
@@ -55,7 +56,26 @@ function parseFlag(argv: string[], flag: string): string | undefined {
 async function dev(argv: string[]): Promise<number> {
   const appRoot = resolveAppRoot(argv.find((arg) => !arg.startsWith("-")));
   const port = Number(parseFlag(argv, "--port") ?? 8081);
+  const platform =
+    parseFlag(argv, "--platform") ??
+    (process.platform === "win32" ? "windows" : "macos");
+  if (platform !== "macos" && platform !== "windows") {
+    log.fail(`unknown platform "${platform}" — use --platform macos|windows`);
+  }
+  // A Win32 GUI process cannot be cross-run from macOS — refuse cleanly (the
+  // machine-step checklist lives in the app's windows/kitron/README.md).
+  if (platform === "windows" && process.platform !== "win32") {
+    log.fail(
+      "kitron dev --platform windows runs on a Windows machine (MSVC toolchain) — see windows/kitron/README.md",
+    );
+  }
   const config = resolveBackend(appRoot, await loadAppConfig(appRoot));
+
+  if (platform === "windows") {
+    // Metro + the Windows host exe; stays attached until the app quits.
+    await devWindows(appRoot, config, port);
+    return 0;
+  }
 
   syncPod(appRoot);
   ensurePods(appRoot);

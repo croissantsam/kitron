@@ -73,6 +73,8 @@ if node cli/src/kitron.ts create "$SCAFFOLD_APP" \
     && [ -f "$SCAFFOLD_APP/windows/kitron/KitronHost.cpp" ] \
     && [ -f "$SCAFFOLD_APP/windows/kitron/KitronHost.h" ] \
     && [ -f "$SCAFFOLD_APP/.kitron/windows-vendor.json" ] \
+    && [ -f "$SCAFFOLD_APP/.kitron/windows-runtime/Cargo.toml" ] \
+    && [ -d "$SCAFFOLD_APP/.kitron/windows-runtime/crates/kitron-windows-host" ] \
     && grep -q "ScaffoldedApp" "$SCAFFOLD_APP/package.json"; then
     echo "  create: PASS ($SCAFFOLD_APP)"
   else
@@ -94,6 +96,15 @@ if [ -d "$SCAFFOLD_APP" ]; then
     echo "  update: PASS"
   else
     fail "kitron update did not re-vendor the app"
+  fi
+fi
+step "CLI e2e: kitron dev --platform windows refuses cleanly off-Windows"
+if [ -d "$SCAFFOLD_APP" ]; then
+  OUT="$(node cli/src/kitron.ts dev "$SCAFFOLD_APP" --platform windows 2>&1 || true)"
+  if [ "$(echo "$OUT" | grep -c "Windows machine")" -ge 1 ]; then
+    echo "  windows dev guard: PASS"
+  else
+    fail "kitron dev --platform windows did not refuse off-Windows"
   fi
 fi
 rm -rf "$SCAFFOLD_ROOT"
