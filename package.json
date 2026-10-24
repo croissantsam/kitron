@@ -1,7 +1,7 @@
 {
   "name": "kitron",
-  "version": "0.1.6",
-  "description": "Desktop runtime for React Native + TypeScript + Node.js apps \u2014 powered by native Rust, without Chromium.",
+  "version": "0.1.7",
+  "description": "Desktop runtime for React Native + TypeScript + Node.js apps — powered by native Rust, without Chromium.",
   "license": "MIT",
   "packageManager": "pnpm@11.21.0",
   "type": "module",
