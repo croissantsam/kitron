@@ -23,7 +23,6 @@ menus, lifecycle, IPC supervision) is written in Rust.
 
 ---
 
-
 ## Status — MVP vertical slice (spec §41)
 
 | # | Requirement                                          | Status |
