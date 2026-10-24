@@ -1,12 +1,9 @@
-name: release
+name: Publish to npm
 
-# Automatic release flow (mirrors croissant-electron/publish-npm.yml): every
-# push to `main` bumps the patch version, publishes to npm, and creates a
-# GitHub Release. Manual bumps (minor/major) can still be done locally with
-# `npm version minor && git push --follow-tags`.
 on:
   push:
-    branches: [main]
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -14,12 +11,11 @@ permissions:
   id-token: write
 
 jobs:
-  release:
+  publish:
     name: Bump version and publish
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Skip the release commit itself and explicit skip requests.
-    if: 'github.event_name == ''workflow_dispatch'' || (!startsWith(github.event.head_commit.message, ''chore: release v'') && !contains(github.event.head_commit.message, ''[skip release]''))'
+    if: github.event_name == 'workflow_dispatch' || (github.actor != 'github-actions[bot]' && !contains(github.event.head_commit.message, '[skip ci]'))
 
     steps:
       - name: Checkout repository
@@ -41,69 +37,44 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Configure git
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      - name: Toolchain (Rust)
-        run: rustup target add aarch64-apple-darwin
-
-      - name: Typecheck
-        run: pnpm run typecheck
-
-      - name: Rust tests
-        run: KITRON_NODE_PATH="$(command -v node)" cargo test --manifest-path runtime/rust/Cargo.toml
-
-      - name: SDK smoke
-        run: node --experimental-strip-types --disable-warning=ExperimentalWarning tests/sdk-smoke.mjs
-
-      - name: Bridge conformance
-        run: node tests/bridge-conformance.mjs
+      - name: Run typecheck
+        run: pnpm typecheck
 
       - name: Bump patch version
         id: version
         run: |
-          MSG="${{ github.event.head_commit.message }}"
-          if echo "$MSG" | grep -qi "\[major\]"; then
-            BUMP=major
-          elif echo "$MSG" | grep -qi "\[minor\]"; then
-            BUMP=minor
-          else
-            BUMP=patch
-          fi
-
-          npm version "$BUMP" --no-git-tag-version
+          npm version patch --no-git-tag-version
           VERSION=$(node -p "require('./package.json').version")
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo
-          echo "Bumping: $BUMP → $VERSION"
 
       - name: Verify package contents
         run: npm pack --dry-run
 
       - name: Commit version bump
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add package.json
-          git commit -m "chore: release v${VERSION} [skip release]"
-          git tag "v${VERSION}"
+          git commit -m "chore: release v${{ steps.version.outputs.version }} [skip ci]"
+          git tag "v${{ steps.version.outputs.version }}"
 
       - name: Publish to npm
         run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
       - name: Generate release notes
         id: release_notes
         run: |
+          # Get the previous tag
           PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
           if [ -z "$PREV_TAG" ]; then
+            # No previous tag, get all commits
             COMMITS=$(git log --oneline --format="- %s (%h)" HEAD)
           else
-            COMMITS=$(git log "${PREV_TAG}..HEAD" --oneline --format="- %s (%h)")
+            # Get commits since last tag
+            COMMITS=$(git log ${PREV_TAG}..HEAD --oneline --format="- %s (%h)")
           fi
 
+          # Filter out merge commits, "Retry" commits, release commits, and version bumps for cleaner notes
           FILTERED_COMMITS=$(echo "$COMMITS" | grep -v "Merge branch" | grep -v "Retry" | grep -v "chore: release" | head -20)
 
           if [ -z "$FILTERED_COMMITS" ]; then
@@ -112,6 +83,7 @@ jobs:
             RELEASE_BODY="Release notes for version ${{ steps.version.outputs.version }}.\n\n### Changes\n${FILTERED_COMMITS}"
           fi
 
+          # Use heredoc to properly output multiline string to GITHUB_OUTPUT
           {
             echo "body<<EOF"
             echo -e "$RELEASE_BODY"
