@@ -1,35 +1,42 @@
 name: release
 
-# Automatic release flow: every push to `main` bumps the patch version, commits,
-# tags and creates a GitHub Release. The `publish` workflow then publishes to
-# npm automatically. Manual bumps (minor/major) can still be done locally with
+# Automatic release flow (mirrors croissant-electron/publish-npm.yml): every
+# push to `main` bumps the patch version, publishes to npm, and creates a
+# GitHub Release. Manual bumps (minor/major) can still be done locally with
 # `npm version minor && git push --follow-tags`.
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
 
 jobs:
   release:
+    name: Bump version and publish
     runs-on: macos-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
     # Skip the release commit itself and explicit skip requests.
-    if: "!startsWith(github.event.head_commit.message, 'chore(release):') && !contains(github.event.head_commit.message, '[skip release]')"
-    permissions:
-      contents: write
-      id-token: write
+    if: github.event_name == 'workflow_dispatch' || (!startsWith(github.event.head_commit.message, 'chore: release v') && !contains(github.event.head_commit.message, '[skip release]'))
+
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
         with:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          registry-url: "https://registry.npmjs.org"
-
       - name: Toolchain (pnpm)
         run: npm install -g pnpm
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "pnpm"
+          registry-url: "https://registry.npmjs.org"
 
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
@@ -37,11 +44,10 @@ jobs:
       - name: Configure git
         run: |
           git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
       - name: Toolchain (Rust)
-        run: |
-          rustup target add aarch64-apple-darwin
+        run: rustup target add aarch64-apple-darwin
 
       - name: Typecheck
         run: pnpm run typecheck
@@ -55,33 +61,71 @@ jobs:
       - name: Bridge conformance
         run: node tests/bridge-conformance.mjs
 
-      - name: Bump version
+      - name: Bump patch version
+        id: version
         run: |
-          # Allow overriding the bump type via commit message keywords.
           MSG="${{ github.event.head_commit.message }}"
           if echo "$MSG" | grep -qi "\[major\]"; then
-            BUMP="major"
+            BUMP=major
           elif echo "$MSG" | grep -qi "\[minor\]"; then
-            BUMP="minor"
+            BUMP=minor
           else
-            BUMP="patch"
+            BUMP=patch
           fi
-          echo "Bumping: $BUMP"
-          npm version "$BUMP" -m "chore(release): %s"
 
-      - name: Push commit and tag
-        run: |
-          git push origin HEAD
-          git push origin --tags
+          npm version "$BUMP" --no-git-tag-version
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo
+          echo "Bumping: $BUMP → $VERSION"
 
-      - name: Create GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Verify package contents
+        run: npm pack --dry-run
+
+      - name: Commit version bump
         run: |
-          TAG=$(git describe --tags --abbrev=0)
-          gh release create "$TAG" --title "$TAG" --generate-notes
+          VERSION="${{ steps.version.outputs.version }}"
+          git add package.json
+          git commit -m "chore: release v${VERSION} [skip release]"
+          git tag "v${VERSION}"
 
       - name: Publish to npm
         run: npm publish --access public
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          PREV_TAG=$(git describe --tags --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            COMMITS=$(git log --oneline --format="- %s (%h)" HEAD)
+          else
+            COMMITS=$(git log "${PREV_TAG}..HEAD" --oneline --format="- %s (%h)")
+          fi
+
+          FILTERED_COMMITS=$(echo "$COMMITS" | grep -v "Merge branch" | grep -v "Retry" | grep -v "chore: release" | head -20)
+
+          if [ -z "$FILTERED_COMMITS" ]; then
+            RELEASE_BODY="Release notes for version ${{ steps.version.outputs.version }}.\n\nNo significant changes since last release."
+          else
+            RELEASE_BODY="Release notes for version ${{ steps.version.outputs.version }}.\n\n### Changes\n${FILTERED_COMMITS}"
+          fi
+
+          {
+            echo "body<<EOF"
+            echo -e "$RELEASE_BODY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Create GitHub Release
+        uses: actions/create-release@v1
+        with:
+          tag_name: "v${{ steps.version.outputs.version }}"
+          release_name: "Release v${{ steps.version.outputs.version }}"
+          body: ${{ steps.release_notes.outputs.body }}
+          draft: false
+          prerelease: false
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Push release commit and tag
+        run: git push --follow-tags
