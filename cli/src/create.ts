@@ -5,6 +5,8 @@ import path from "node:path";
 import process from "node:process";
 import { createRequire } from "node:module";
 
+import type { KitronConfig } from "@kitron/core";
+
 import {
   APP_TEMPLATE_ROOT,
   MACOS_TEMPLATE_ROOT,
@@ -441,19 +443,6 @@ export async function create(argv: string[]): Promise<number> {
     );
   }
 
-  // 1. Install JS dependencies.
-  if (!args.skipInstall) {
-    log.info("installing dependencies (pnpm)…");
-    const install = run("pnpm", ["install"], { cwd: destination });
-    if (install.status !== 0) {
-      log.warn("pnpm failed — retrying with npm");
-      const npmInstall = run("npm", ["install"], { cwd: destination });
-      if (npmInstall.status !== 0) {
-        throw new Error("dependency install failed");
-      }
-    }
-  }
-
   // 2. Vendor the Kitron SDK packages for standalone resolution.
   vendorSdkPackages(destination, SDK_ROOT);
   syncNodeHost(destination);
@@ -462,56 +451,82 @@ export async function create(argv: string[]): Promise<number> {
   //     consumes it later); independent of the macOS generator below.
   vendorWindowsTemplate(destination);
 
-  // 3. Generate the macOS Xcode project via react-native-macos's generator.
-  const require = createRequire(import.meta.url);
-  if (!args.skipMacosSetup) {
-    const generatorPath = path.join(
-      destination,
-      "node_modules",
-      "react-native-macos",
-      "local-cli",
-      "generate-macos.js",
-    );
-    if (!fs.existsSync(generatorPath)) {
-      throw new Error(
-        `react-native-macos not installed under ${destination}; re-run with --skip-macos-setup after installing deps`,
-      );
-    }
-    const generateMacOS: (
-      projectDir: string,
-      name: string,
-      options: { overwrite?: boolean },
-    ) => void = require(generatorPath);
-    log.info("generating macos/ project…");
-    generateMacOS(destination, projectName, { overwrite: true });
-
-    // 4. Kitron-native wiring.
-    const appDelegate = path.join(
-      destination,
-      "macos",
-      `${projectName}-macOS`,
-      "AppDelegate.swift",
-    );
-    fs.copyFileSync(
-      path.join(MACOS_TEMPLATE_ROOT, "AppDelegate.swift"),
-      appDelegate,
-    );
-
-    patchPodfile(destination);
-    patchXcodeProject(destination);
-    syncKitronPod(destination);
-
-    log.info("pod install (this can take a few minutes)…");
-    if (!runPodInstall(path.join(destination, "macos"))) {
-      log.warn(
-        "pod install failed — run it manually with RCT_NEW_ARCH_ENABLED=1 (transient CocoaPods CDN errors usually succeed on a retry)",
-      );
-      return 1;
-    }
-  }
-
   log.info(
     `done. next: cd ${path.basename(destination)} && kitron dev`,
   );
   return 0;
+}
+
+/** Installs the app's JS dependencies when structure needs them. The CLI calls
+ * this lazily from `kitron dev`/`kitron build` so `kitron create` stays a
+ * pure scaffold step (no package manager side effects on init). */
+export function ensureDependencies(appRoot: string): void {
+  const generatorPath = path.join(
+    appRoot,
+    "node_modules",
+    "react-native-macos",
+    "local-cli",
+    "generate-macos.js",
+  );
+  if (fs.existsSync(generatorPath)) {
+    return;
+  }
+  log.info("installing app dependencies (pnpm)…");
+  const install = run("pnpm", ["install"], { cwd: appRoot });
+  if (install.status !== 0) {
+    log.warn("pnpm failed — retrying with npm");
+    const npmInstall = run("npm", ["install"], { cwd: appRoot });
+    if (npmInstall.status !== 0) {
+      throw new Error("dependency install failed");
+    }
+  }
+}
+
+/** Generates the macOS Xcode project + Kitron wiring on the first `kitron dev`.
+ * `kitron create` no longer installs (and thus cannot run the react-native
+ * generator) — this happens lazily when the developer starts the app. */
+export function setupMacosProject(appRoot: string, config: KitronConfig): void {
+  const projectName = sanitizeProjectName(config.app.name);
+  if (!projectName) {
+    throw new Error("the app name in kitron.config.ts is empty");
+  }
+  const macosDir = path.join(appRoot, "macos");
+  if (fs.existsSync(macosDir) && fs.readdirSync(macosDir).some((entry) => entry.endsWith(".xcodeproj"))) {
+    return;
+  }
+
+  const generatorPath = path.join(
+    appRoot,
+    "node_modules",
+    "react-native-macos",
+    "local-cli",
+    "generate-macos.js",
+  );
+  if (!fs.existsSync(generatorPath)) {
+    throw new Error(
+      `react-native-macos not installed under ${appRoot}; run pnpm install first`,
+    );
+  }
+  const generateMacOS: (
+    projectDir: string,
+    name: string,
+    options: { overwrite?: boolean },
+  ) => void = createRequire(import.meta.url)(generatorPath);
+  log.info("generating macos/ project…");
+  generateMacOS(appRoot, projectName, { overwrite: true });
+
+  // Kitron-native wiring for a freshly generated macOS project.
+  const appDelegate = path.join(
+    appRoot,
+    "macos",
+    `${projectName}-macOS`,
+    "AppDelegate.swift",
+  );
+  fs.copyFileSync(
+    path.join(MACOS_TEMPLATE_ROOT, "AppDelegate.swift"),
+    appDelegate,
+  );
+  patchPodfile(appRoot);
+  patchXcodeProject(appRoot);
+  syncKitronPod(appRoot);
 }

@@ -15,6 +15,8 @@ import {
   vendorSdkPackages,
   vendorWindowsTemplate,
   loadTypescript,
+  ensureDependencies,
+  setupMacosProject,
 } from "./create.ts";
 import {
   buildXcode,
@@ -78,6 +80,8 @@ async function dev(argv: string[]): Promise<number> {
     return 0;
   }
 
+  ensureDependencies(appRoot);
+  setupMacosProject(appRoot, config);
   syncPod(appRoot);
   ensurePods(appRoot);
   void (await startMetro(appRoot, port));
@@ -95,6 +99,8 @@ async function build(argv: string[]): Promise<number> {
   const appRoot = resolveAppRoot(argv.find((arg) => !arg.startsWith("-")));
   const config = resolveBackend(appRoot, await loadAppConfig(appRoot));
 
+  ensureDependencies(appRoot);
+  setupMacosProject(appRoot, config);
   syncPod(appRoot);
   ensurePods(appRoot);
   await bundleJs(appRoot);
